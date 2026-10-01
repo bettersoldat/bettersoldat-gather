@@ -21,14 +21,14 @@ type Server struct {
 
 // Config is everything the bot is told.
 type Config struct {
-	Token     string   // GATHER_DISCORD_TOKEN
-	ChannelID string   // GATHER_CHANNEL_ID: the one channel the bot listens and talks in
-	Servers   []Server // GATHER_SERVERS: "name=host:port name=host:port"; or GATHER_SERVER_ADDR for one, named "main"
-	Listen    string   // GATHER_LISTEN: the API's address, ":8080" by default
-	Secret    string   // GATHER_SECRET: shared with the server's script
-	Prefix    string   // GATHER_PREFIX: "!beta_" by default
-	Maps      []string // GATHER_MAPS: the pool, space-separated; the CTF maps by default
-	TeamSize  int      // GATHER_TEAM_SIZE: 3 by default
+	Token    string   // GATHER_DISCORD_TOKEN
+	Channels []string // GATHER_CHANNEL_ID: the channels the bot listens and talks in, space- or comma-separated
+	Servers  []Server // GATHER_SERVERS: "name=host:port name=host:port"; or GATHER_SERVER_ADDR for one, named "main"
+	Listen   string   // GATHER_LISTEN: the API's address, ":8080" by default
+	Secret   string   // GATHER_SECRET: shared with the server's script
+	Prefix   string   // GATHER_PREFIX: "!beta_" by default
+	Maps     []string // GATHER_MAPS: the pool, space-separated; the CTF maps by default
+	TeamSize int      // GATHER_TEAM_SIZE: 3 by default
 }
 
 // DefaultMaps is SoldatReloaded's CTF maps (assets/maps/ctf_*.pms).
@@ -46,15 +46,15 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	c := Config{
-		Token:     os.Getenv("GATHER_DISCORD_TOKEN"),
-		ChannelID: os.Getenv("GATHER_CHANNEL_ID"),
-		Listen:    getenv("GATHER_LISTEN", ":8080"),
-		Secret:    os.Getenv("GATHER_SECRET"),
-		Prefix:    getenv("GATHER_PREFIX", "!beta_"),
-		Maps:      strings.Fields(os.Getenv("GATHER_MAPS")),
+		Token:    os.Getenv("GATHER_DISCORD_TOKEN"),
+		Channels: ParseList(os.Getenv("GATHER_CHANNEL_ID")),
+		Listen:   getenv("GATHER_LISTEN", ":8080"),
+		Secret:   os.Getenv("GATHER_SECRET"),
+		Prefix:   getenv("GATHER_PREFIX", "!beta_"),
+		Maps:     strings.Fields(os.Getenv("GATHER_MAPS")),
 	}
 	var errs []error
-	for name, v := range map[string]string{"GATHER_DISCORD_TOKEN": c.Token, "GATHER_CHANNEL_ID": c.ChannelID, "GATHER_SECRET": c.Secret} {
+	for name, v := range map[string]string{"GATHER_DISCORD_TOKEN": c.Token, "GATHER_CHANNEL_ID": strings.Join(c.Channels, " "), "GATHER_SECRET": c.Secret} {
 		if v == "" {
 			errs = append(errs, fmt.Errorf("%s is not set", name))
 		}
@@ -71,6 +71,20 @@ func Load() (Config, error) {
 		errs = append(errs, err)
 	}
 	return c, errors.Join(errs...)
+}
+
+// ParseList splits a setting of several values on spaces, commas, tabs and newlines,
+// dropping repeats and keeping the order.
+func ParseList(v string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, f := range strings.FieldsFunc(v, func(r rune) bool { return r == ' ' || r == ',' || r == '\n' || r == '\t' }) {
+		if !seen[f] {
+			seen[f] = true
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // ParseServers reads GATHER_SERVERS ("eu1=host:port na1=host:port", separated by

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"gatherbot/internal/api"
@@ -37,7 +38,7 @@ func main() {
 		Prefix:   cfg.Prefix,
 	}, nil)
 
-	bot, err := discord.New(cfg.Token, cfg.ChannelID, cfg.Prefix, svc)
+	bot, err := discord.New(cfg.Token, cfg.Channels, cfg.Prefix, svc)
 	if err != nil {
 		log.Fatalf("discord: %v", err)
 	}
@@ -55,6 +56,7 @@ func main() {
 		}
 	}()
 
+	log.Printf("gatherbot: listening in channels %s", strings.Join(cfg.Channels, " "))
 	for _, s := range cfg.Servers {
 		log.Printf("gatherbot: server %s at %s", s.Name, s.Addr)
 	}

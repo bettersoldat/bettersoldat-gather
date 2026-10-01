@@ -11,8 +11,9 @@ primary_region = "ams"
 
 [env]
   GATHER_LISTEN = ":8080"
-  # the channel the bot lives in, and the servers it runs: name=host:port, space-separated
-  GATHER_CHANNEL_ID = "1555196261286809712"
+  # the channels the bot lives in (one gather, announced in all), and the servers it
+  # runs: name=host:port; both space-separated
+  GATHER_CHANNEL_ID = "1555196261286809712 1555278127331020933"
   GATHER_SERVERS = "eu=soldatreloaded-eu.fly.dev:23073"
   GATHER_PREFIX = "!beta_"
   GATHER_TEAM_SIZE = "3"

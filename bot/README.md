@@ -1,6 +1,6 @@
 # gatherbot
 
-The Discord half: one bot, in one channel, running gathers on one or more SoldatReloaded
+The Discord half: one bot, in one or more channels, running gathers on one or more SoldatReloaded
 servers. 3v3 CTF, best of three: the teams start their maps in the game, the bot draws
 the tiebreaker, and it is played only when the first two are split 1-1. Nothing is
 ranked or persisted; restarting the bot empties the queue.
@@ -41,7 +41,9 @@ the bot's word); the players put it in the main menu's Join page with the addres
    **Send Messages**, **Read Message History**. Open the URL it makes and invite the bot
    to your server.
 4. In Discord, **User Settings → Advanced → Developer Mode** on; then right-click the
-   gather channel, **Copy Channel ID**: that is `GATHER_CHANNEL_ID`.
+   gather channel, **Copy Channel ID**: that is `GATHER_CHANNEL_ID`. More than one
+   channel (a second server, say) goes in the same setting, separated by spaces; the bot
+   must be invited to each server.
 5. The bot DMs players. A player whose DMs are closed to server members is named in
    the channel and can open them and use `!beta_info`.
 
@@ -50,7 +52,7 @@ the bot's word); the players put it in the main menu's Join page with the addres
 | variable | what | default |
 |---|---|---|
 | `GATHER_DISCORD_TOKEN` | the bot's token | required |
-| `GATHER_CHANNEL_ID` | the one channel the bot listens and talks in | required |
+| `GATHER_CHANNEL_ID` | the channels the bot listens and talks in, separated by spaces or commas; they share one gather, each command is answered where it was said, and the announcements go to all of them | required |
 | `GATHER_SERVERS` | the game servers, `name=host:port`, separated by spaces or commas; the name is what each server's script says (`GATHER_SERVER_NAME`), the host:port what players are told to join | required (or `GATHER_SERVER_ADDR` for one server, named `main`) |
 | `GATHER_SECRET` | shared with every server's script; sent as a bearer token | required |
 | `GATHER_LISTEN` | where the HTTP API listens | `:8080` |

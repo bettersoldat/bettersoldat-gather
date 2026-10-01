@@ -1,5 +1,7 @@
-// Package discord is the bot's face: it reads the !beta_ commands in the gather channel,
-// answers them, and is the service's Notifier for announcements and DMs.
+// Package discord is the bot's face: it reads the !beta_ commands in the gather
+// channels, answers each in the channel it came from, and is the service's Notifier for
+// announcements, which go to every gather channel, and DMs. The channels share the one
+// gather: a player added in any of them is in the same queue.
 package discord
 
 import (
@@ -16,20 +18,24 @@ import (
 
 // Bot is the Discord session around the service.
 type Bot struct {
-	s         *discordgo.Session
-	svc       *service.Service
-	channelID string
-	prefix    string
+	s        *discordgo.Session
+	svc      *service.Service
+	channels []string // in the order given, for the announcements
+	listens  map[string]bool
+	prefix   string
 }
 
 // New makes the session; Run opens it.
-func New(token, channelID, prefix string, svc *service.Service) (*Bot, error) {
+func New(token string, channels []string, prefix string, svc *service.Service) (*Bot, error) {
 	s, err := discordgo.New("Bot " + token)
 	if err != nil {
 		return nil, err
 	}
 	s.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentsMessageContent | discordgo.IntentsGuilds
-	b := &Bot{s: s, svc: svc, channelID: channelID, prefix: prefix}
+	b := &Bot{s: s, svc: svc, channels: channels, listens: map[string]bool{}, prefix: prefix}
+	for _, c := range channels {
+		b.listens[c] = true
+	}
 	s.AddHandler(b.onMessage)
 	s.AddHandler(func(_ *discordgo.Session, r *discordgo.Ready) {
 		log.Printf("discord: logged in as %s#%s", r.User.Username, r.User.Discriminator)
@@ -42,14 +48,26 @@ func (b *Bot) Run(ctx context.Context) error {
 	if err := b.s.Open(); err != nil {
 		return fmt.Errorf("opening the Discord session: %w", err)
 	}
+	// each channel, looked up once, so a channel the bot was never let into (not invited
+	// to that server, or no View Channels there) says so in the log rather than in silence
+	for _, c := range b.channels {
+		if ch, err := b.s.Channel(c); err != nil {
+			log.Printf("discord: channel %s is out of reach: %v", c, err)
+		} else {
+			log.Printf("discord: channel %s is #%s", c, ch.Name)
+		}
+	}
 	<-ctx.Done()
 	return b.s.Close()
 }
 
-// Announce is a line in the gather channel.
+// Announce is a line in every gather channel. One that fails (the bot not let in there)
+// doesn't keep it from the others.
 func (b *Bot) Announce(text string) {
-	if _, err := b.s.ChannelMessageSend(b.channelID, text); err != nil {
-		log.Printf("discord: announcing: %v", err)
+	for _, c := range b.channels {
+		if _, err := b.s.ChannelMessageSend(c, text); err != nil {
+			log.Printf("discord: announcing in %s: %v", c, err)
+		}
 	}
 }
 
@@ -64,7 +82,7 @@ func (b *Bot) DM(userID, text string) error {
 }
 
 func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
-	if m.Author == nil || m.Author.Bot || m.ChannelID != b.channelID {
+	if m.Author == nil || m.Author.Bot || !b.listens[m.ChannelID] {
 		return
 	}
 	text := strings.TrimSpace(m.Content)
