@@ -26,8 +26,12 @@ func main() {
 		log.Fatalf("config: %v", err)
 	}
 
+	var servers []service.ServerConfig
+	for _, s := range cfg.Servers {
+		servers = append(servers, service.ServerConfig{Name: s.Name, Addr: s.Addr})
+	}
 	svc := service.New(service.Config{
-		ServerAddr:  cfg.ServerAddr,
+		Servers:     servers,
 		TeamSize:    cfg.TeamSize,
 		Pool:        cfg.Maps,
 		PickTimeout: cfg.PickTimeout,
@@ -53,7 +57,10 @@ func main() {
 		}
 	}()
 
-	log.Printf("gatherbot: %dv%d, prefix %q, server %s, %d maps in the pool", cfg.TeamSize, cfg.TeamSize, cfg.Prefix, cfg.ServerAddr, len(cfg.Maps))
+	for _, s := range cfg.Servers {
+		log.Printf("gatherbot: server %s at %s", s.Name, s.Addr)
+	}
+	log.Printf("gatherbot: %dv%d, prefix %q, %d maps in the pool", cfg.TeamSize, cfg.TeamSize, cfg.Prefix, len(cfg.Maps))
 	if err := bot.Run(ctx); err != nil {
 		log.Printf("discord: %v", err)
 	}

@@ -1,6 +1,7 @@
 -- The gather script for a bettersoldat server (docs/scripting.md), the other half of
 -- gatherbot. Copy it to the server's scripts/server.lua, or start the server with
--- +sv_script path/to/gather.lua, and set the three values below.
+-- +sv_script path/to/gather.lua, and set the values below or their environment
+-- variables. One bot serves several servers: each says its name with every request.
 --
 -- It keeps the server to the gather: whoever joins must say /pw <password> in the chat
 -- within `grace` seconds, with the password the bot DMed them (or the spectators'
@@ -14,10 +15,13 @@
 -- replay the current map from the start, which in a gather counts for nothing;
 -- anyone may say !status for the gather, the series and the round's score.
 
-local bot_url = "http://127.0.0.1:8080" -- where gatherbot listens (GATHER_LISTEN)
-local secret = "change-me"              -- the same as the bot's GATHER_SECRET
-local grace = 30                        -- seconds to say /pw; the bot's GATHER_GRACE
-local poll_every = 3                    -- seconds between polls of the bot
+-- The settings, from the environment when it has them (the Docker image sets them),
+-- else the values here.
+local bot_url = os.getenv("GATHER_BOT_URL") or "http://127.0.0.1:8080" -- where gatherbot listens
+local secret = os.getenv("GATHER_SECRET") or "change-me"               -- the bot's GATHER_SECRET
+local server_name = os.getenv("GATHER_SERVER_NAME") or ""              -- this server's name in the bot's GATHER_SERVERS; "" with one server
+local grace = tonumber(os.getenv("GATHER_GRACE")) or 30                -- seconds to say /pw; the bot's GATHER_GRACE
+local poll_every = tonumber(os.getenv("GATHER_POLL")) or 3             -- seconds between polls of the bot
 
 local color = "7FD6FF"
 
@@ -37,7 +41,8 @@ local joined_at = {} -- slot -> os.time() of the join
 -- --- talking to the bot --------------------------------------------------------------
 
 local function headers()
-    return {Authorization = "Bearer " .. secret, ["Content-Type"] = "application/json"}
+    return {Authorization = "Bearer " .. secret, ["Content-Type"] = "application/json",
+            ["X-Gather-Server"] = server_name}
 end
 
 local function post(path, body)
@@ -367,5 +372,5 @@ function on_round_start(map)
     server.next_map(wanted)
 end
 
-server.print("gather: script loaded, polling " .. bot_url)
+server.print(("gather: script loaded, polling %s as %s"):format(bot_url, server_name ~= "" and server_name or "the only server"))
 poll()

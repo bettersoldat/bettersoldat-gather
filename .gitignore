@@ -1,4 +1,6 @@
 .env
-/gatherbot
-/gatherbot.exe
+*.env
+!.env.example
+/bot/gatherbot
+/bot/gatherbot.exe
 /bin/

@@ -1,0 +1,39 @@
+# fly.io: the one gather bot. README.md walks through the first deploy; in short:
+#   fly launch --no-deploy --copy-config --name <app>     (once)
+#   fly secrets set GATHER_DISCORD_TOKEN=... GATHER_SECRET=...
+#   fly deploy
+# The bot talks to Discord outbound; the HTTP service is for the game servers' scripts.
+app = "gather-bot"
+primary_region = "ams"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  GATHER_LISTEN = ":8080"
+  # the channel the bot lives in, and the servers it runs: name=host:port, space-separated
+  GATHER_CHANNEL_ID = "000000000000000000"
+  GATHER_SERVERS = "eu1=bettersoldat-eu1.fly.dev:23073"
+  GATHER_PREFIX = "!beta_"
+  GATHER_TEAM_SIZE = "3"
+  GATHER_PICK_TIMEOUT = "90"
+  GATHER_GRACE = "30"
+  # GATHER_DISCORD_TOKEN and GATHER_SECRET are secrets: fly secrets set ...
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"   # the bot must stay up to hear Discord
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

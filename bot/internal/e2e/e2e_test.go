@@ -2,8 +2,8 @@
 // bot. It runs only when GATHER_E2E_SERVER names the server's binary and
 // GATHER_E2E_DIR the directory to run it from (bettersoldat's root, for ./assets):
 //
-//	GATHER_E2E_SERVER=../bettersoldat/build/windows/x64/release/bettersoldat-server.exe \
-//	GATHER_E2E_DIR=../bettersoldat go test ./internal/e2e -v
+//	GATHER_E2E_SERVER=/abs/path/to/bettersoldat/build/windows/x64/release/bettersoldat-server.exe \
+//	GATHER_E2E_DIR=/abs/path/to/bettersoldat go test ./internal/e2e -v
 //
 // The fake bot says a gather is live on three maps; the script must start the first,
 // and as `nextmap` is typed at the server's console three times, report each round and
@@ -13,6 +13,7 @@ package e2e
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -42,20 +43,37 @@ func (f *fakeBot) handler() http.Handler {
 	return api.Handler(secret, f)
 }
 
-func (f *fakeBot) State() api.State {
-	return api.State{GatherID: 1, Phase: "live", Password: "playpw", SpecPassword: "specpw", Maps: maps,
-		Pool:  append([]string{"ctf_Ash"}, maps...),
-		Teams: map[string][]string{"alpha": {"a"}, "bravo": {"b"}}}
+// the script says it is "e2e" with every request; anything else is refused
+func (f *fakeBot) check(server string) error {
+	if server != "e2e" {
+		return fmt.Errorf("%w %q", api.ErrNoServer, server)
+	}
+	return nil
 }
 
-func (f *fakeBot) RoundEnd(r gather.RoundReport) error {
+func (f *fakeBot) State(server string) (api.State, error) {
+	if err := f.check(server); err != nil {
+		return api.State{}, err
+	}
+	return api.State{Server: server, GatherID: 1, Phase: "live", Password: "playpw", SpecPassword: "specpw", Maps: maps,
+		Pool:  append([]string{"ctf_Ash"}, maps...),
+		Teams: map[string][]string{"alpha": {"a"}, "bravo": {"b"}}}, nil
+}
+
+func (f *fakeBot) RoundEnd(server string, r gather.RoundReport) error {
+	if err := f.check(server); err != nil {
+		return err
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.reports = append(f.reports, r)
 	return nil
 }
 
-func (f *fakeBot) ServerEvent(e api.Event) {
+func (f *fakeBot) ServerEvent(server string, e api.Event) {
+	if f.check(server) != nil {
+		return
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.events = append(f.events, e)
@@ -79,17 +97,14 @@ func TestScriptPlaysTheSeries(t *testing.T) {
 	srv := httptest.NewServer(bot.handler())
 	defer srv.Close()
 
-	// the script, with the fake bot's address and a quick poll
-	src, err := os.ReadFile(filepath.Join("..", "..", "script", "gather.lua"))
+	// the script as shipped, but a say_to goes nowhere without a joined player: it is
+	// printed too, so the test sees it
+	src, err := os.ReadFile(filepath.Join("..", "..", "..", "server", "gather.lua"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	text := string(src)
 	for _, r := range []struct{ old, new string }{
-		{`local bot_url = "http://127.0.0.1:8080"`, `local bot_url = "` + srv.URL + `"`},
-		{`local secret = "change-me"`, `local secret = "` + secret + `"`},
-		{`local poll_every = 3`, `local poll_every = 1`},
-		// a say_to goes nowhere without a joined player: print it, so the test sees it
 		{`local color = "7FD6FF"`, `local color = "7FD6FF"; local _say_to = server.say_to; server.say_to = function(slot, text, c) server.print("[to " .. slot .. "] " .. text); _say_to(slot, text, c) end`},
 	} {
 		if !strings.Contains(text, r.old) {
@@ -104,6 +119,8 @@ func TestScriptPlaysTheSeries(t *testing.T) {
 
 	cmd := exec.Command(exe, "+sv_port", "23999", "+map", "ctf_Ash", "+sv_maps", "", "+sv_script", script, "+sv_hostname", "e2e")
 	cmd.Dir = dir
+	// the settings, as the Docker image passes them
+	cmd.Env = append(os.Environ(), "GATHER_BOT_URL="+srv.URL, "GATHER_SECRET="+secret, "GATHER_SERVER_NAME=e2e", "GATHER_POLL=1")
 	hideWindow(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -165,7 +182,7 @@ func TestScriptPlaysTheSeries(t *testing.T) {
 		}
 	}
 
-	waitFor("gather: script loaded", 15*time.Second)
+	waitFor("gather: script loaded, polling "+srv.URL+" as e2e", 15*time.Second)
 	waitFor("gather: #1 is live: ctf_Kampf, ctf_Division, ctf_Laos", 15*time.Second)
 	waitFor("Gather #1, map 1 of 3: ctf_Kampf", 30*time.Second)
 

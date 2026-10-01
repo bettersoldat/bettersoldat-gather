@@ -1,6 +1,6 @@
-// Package gather holds the state of one gather: the queue, the teams once it fills, the
-// map picks, the passwords and the series of rounds. It knows nothing of Discord or of
-// the game server; the service around it turns its changes into messages.
+// Package gather holds the state of one gather on one server: the teams, the map
+// picks, the passwords and the series of rounds. It knows nothing of Discord, of the
+// queue or of the game server; the service around it turns its changes into messages.
 package gather
 
 import (
@@ -18,7 +18,7 @@ import (
 type Phase int
 
 const (
-	// Idle: players are joining the queue.
+	// Idle: nothing is on; the server is locked and waits for the next gather.
 	Idle Phase = iota
 	// Picking: the teams are made and each picks its map.
 	Picking
@@ -88,13 +88,12 @@ type Scores struct {
 
 // Gather is the state. It is not safe for concurrent use; the service locks around it.
 type Gather struct {
-	ID       int
+	ID       int // the gather's number; 0 before the first, and the last one's while idle
 	Phase    Phase
 	TeamSize int
 	Pool     []string // the maps a team may pick
 
-	Queue        []Player    // who is waiting, while Idle
-	Teams        [2][]Player // once full
+	Teams        [2][]Player // once started
 	Picks        [2]string   // each team's map, "" until picked
 	Tiebreaker   string      // chosen as the gather goes live
 	Password     string      // the server's password for the players
@@ -109,75 +108,44 @@ type Gather struct {
 
 // Errors the commands answer with.
 var (
-	ErrInQueue    = errors.New("you are already in the queue")
-	ErrNotInQueue = errors.New("you are not in the queue")
-	ErrInProgress = errors.New("a gather is in progress; wait for it to end")
-	ErrPlaying    = errors.New("you are already playing in this gather")
 	ErrNotPicking = errors.New("there is no map to pick right now")
 	ErrNotInTeam  = errors.New("you are not in this gather")
 	ErrNotLive    = errors.New("no gather is live")
 	ErrWrongID    = errors.New("the report is for another gather")
 	ErrNoSuchMap  = errors.New("no such map in the pool")
+	ErrNotIdle    = errors.New("a gather is already on")
+	ErrWrongCount = errors.New("not the number of players a gather takes")
 )
 
-// New makes an idle gather numbered 1, with a password already set so the server is
-// locked from the start. rng may be nil for a time-seeded one.
+// New makes an idle gather, with passwords already set so the server is locked from
+// the start. rng may be nil for a time-seeded one.
 func New(teamSize int, pool []string, rng *mrand.Rand) *Gather {
 	if rng == nil {
 		rng = mrand.New(mrand.NewSource(time.Now().UnixNano()))
 	}
-	g := &Gather{ID: 1, TeamSize: teamSize, Pool: append([]string(nil), pool...), rng: rng}
+	g := &Gather{TeamSize: teamSize, Pool: append([]string(nil), pool...), rng: rng}
 	g.Password = NewPassword()
 	g.SpecPassword = NewPassword()
 	return g
 }
 
-// Size is how many players fill the gather.
+// Size is how many players a gather takes.
 func (g *Gather) Size() int { return 2 * g.TeamSize }
 
-// Add puts p in the queue. full is true when p was the last one needed: the teams are
-// then made, the passwords renewed and the picking begun.
-func (g *Gather) Add(p Player, pickTimeout time.Duration) (full bool, err error) {
+// Start begins gather id with these players: shuffled into two teams, new passwords,
+// and the picking begun with pickTimeout to go.
+func (g *Gather) Start(id int, players []Player, pickTimeout time.Duration) error {
 	if g.Phase != Idle {
-		if g.TeamOf(p) >= 0 {
-			return false, ErrPlaying
-		}
-		return false, ErrInProgress
+		return ErrNotIdle
 	}
-	for _, q := range g.Queue {
-		if q.ID == p.ID {
-			return false, ErrInQueue
-		}
+	if len(players) != g.Size() {
+		return ErrWrongCount
 	}
-	g.Queue = append(g.Queue, p)
-	if len(g.Queue) < g.Size() {
-		return false, nil
-	}
-	g.start(pickTimeout)
-	return true, nil
-}
-
-// Del takes p out of the queue.
-func (g *Gather) Del(p Player) error {
-	if g.Phase != Idle {
-		return ErrInProgress
-	}
-	for i, q := range g.Queue {
-		if q.ID == p.ID {
-			g.Queue = append(g.Queue[:i], g.Queue[i+1:]...)
-			return nil
-		}
-	}
-	return ErrNotInQueue
-}
-
-// start: the queue shuffled into two teams, new passwords, and the picking begun.
-func (g *Gather) start(pickTimeout time.Duration) {
-	players := append([]Player(nil), g.Queue...)
+	players = append([]Player(nil), players...)
 	g.rng.Shuffle(len(players), func(i, j int) { players[i], players[j] = players[j], players[i] })
+	g.ID = id
 	g.Teams[Alpha] = players[:g.TeamSize]
 	g.Teams[Bravo] = players[g.TeamSize:]
-	g.Queue = nil
 	g.Picks = [2]string{}
 	g.Tiebreaker = ""
 	g.Results = nil
@@ -186,6 +154,7 @@ func (g *Gather) start(pickTimeout time.Duration) {
 	g.SpecPassword = NewPassword()
 	g.PickDeadline = time.Now().Add(pickTimeout)
 	g.Phase = Picking
+	return nil
 }
 
 // TeamOf is p's team index, or -1 when p is not in the gather's teams.
@@ -347,12 +316,10 @@ func (g *Gather) SeriesWinner() int {
 	return -1
 }
 
-// Reset ends the gather, whatever its phase: the next one is numbered after it, idle,
-// with new passwords so the server is locked again.
+// Reset ends the gather, whatever its phase: idle again, with new passwords so the
+// server is locked. The ID stays, as the last gather's number.
 func (g *Gather) Reset() {
-	g.ID++
 	g.Phase = Idle
-	g.Queue = nil
 	g.Teams = [2][]Player{}
 	g.Picks = [2]string{}
 	g.Tiebreaker = ""

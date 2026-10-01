@@ -1,0 +1,167 @@
+# The gather server
+
+The game half: a bettersoldat dedicated server with [gather.lua](gather.lua) as its
+script, packaged as a Docker image for fly.io (or anywhere). Run as many as you like;
+each tells the one bot its name.
+
+## What the script does
+
+- **Keeps the door.** bettersoldat's server has no password of its own, so the script
+  asks: whoever joins must say `/pw <password>` in the chat within `GATHER_GRACE`
+  seconds (30) or is kicked. The players' password, DMed by the bot, lets them into the
+  teams; the spectators' keeps them in the spectators (taking a team gets them kicked).
+  Both change as a gather fills and again as it ends, so the server is locked in
+  between. Bots are left alone.
+- **Plays the series.** It polls the bot every few seconds; when the bot says a gather
+  is live it switches to Alpha's map, then Bravo's, then the tiebreaker if it is 1-1,
+  refuses `/votemap` meanwhile, and posts each round's end to the bot.
+- **Takes a few chat commands**, from anyone but a spectator:
+
+| said | what |
+|---|---|
+| `!map <name>` | loads a CTF map of the bot's pool (`ash` finds ctf_Ash), between gathers |
+| `!p` | pauses the game |
+| `!up` | counts 3, 2, 1 and goes on |
+| `!r` | replays the current map from the start; in a gather the round so far doesn't count |
+| `!status` | the gather, the teams, the series, and the round's score and time (spectators too) |
+
+## Environment
+
+The script's:
+
+| variable | what | default |
+|---|---|---|
+| `GATHER_BOT_URL` | where the bot answers | `http://127.0.0.1:8080` |
+| `GATHER_SECRET` | the bot's `GATHER_SECRET` | `change-me` |
+| `GATHER_SERVER_NAME` | this server's name in the bot's `GATHER_SERVERS`; may stay empty when the bot has one server | empty |
+| `GATHER_GRACE` | seconds to say `/pw`; keep it the bot's `GATHER_GRACE` | `30` |
+| `GATHER_POLL` | seconds between polls of the bot | `3` |
+
+The server's, read by [entrypoint.sh](entrypoint.sh):
+
+| variable | what | default |
+|---|---|---|
+| `SV_PORT` | the UDP port | `23073` |
+| `SV_IP` | the address to listen on; empty for every one, and on fly.io the `fly-global-services` address is found by itself | empty |
+| `SV_HOSTNAME` | the name on the scoreboard | `bettersoldat gather` |
+| `SV_MAP` | the map between gathers | `ctf_Ash` |
+| `SV_TIMELIMIT` | minutes a round lasts | `10` |
+| `SV_KILLLIMIT` | captures that win a round | `10` |
+
+Anything else goes on the command line as the server's own `+cvar value`.
+
+## Without Docker
+
+From bettersoldat's directory, with the script and a gather's limits:
+
+```bash
+GATHER_BOT_URL=http://127.0.0.1:8080 GATHER_SECRET=change-me ./bettersoldat-server +sv_script ../gather-bot/server/gather.lua +sv_timelimit 10 +sv_killlimit 10
+```
+
+The time and kill limits are the server's and read as it starts, so they go on the
+command line or in its `config.cfg`.
+
+## The image
+
+[Dockerfile](Dockerfile) clones bettersoldat at `BETTERSOLDAT_REF` (a tag, branch or
+commit; `main` by default), builds the headless server with xmake, and keeps the
+executable, `config.cfg`, the assets a server reads (no art, no sound) and the script.
+The build installs SDL2's development headers, which the server never uses, because
+xmake installs every package the project requires as it configures; it takes a few
+minutes the first time.
+
+```bash
+docker build -t bettersoldat-gather --build-arg BETTERSOLDAT_REF=v0.3.0 .
+```
+
+```bash
+docker run -p 23073:23073/udp -e GATHER_BOT_URL=https://gather-bot.fly.dev -e GATHER_SECRET=... -e GATHER_SERVER_NAME=eu1 bettersoldat-gather
+```
+
+The server's `sv_ip` cvar, which the entrypoint sets, isn't in bettersoldat yet:
+[sv_ip.patch](sv_ip.patch) adds it (a `+sv_ip <address>` on the command line, or
+`set sv_ip` in config.cfg, binds that address alone; empty binds every one), and the
+build applies it unless the ref already has it. It is a dozen lines across
+`shared/network/transport.{c,h}`, `server/host.{c,h}`, `server/main.c`, `config.cfg`
+and two tests, ready to land upstream as `feat(server): sv_ip, the address to listen on`.
+
+## On fly.io
+
+One Fly app per server. [fly.toml](fly.toml) is one server's; for another, copy it
+(`fly.na1.toml`), change `app`, `primary_region`, `SV_HOSTNAME` and
+`GATHER_SERVER_NAME`, and pass `--config fly.na1.toml` to every command below.
+
+### UDP on Fly, and what the files do about it
+
+- **Bind the `fly-global-services` address.** Fly's proxy rewrites the addresses of UDP
+  packets; an app listening on every address answers from its private address and the
+  answers never reach the player. The entrypoint resolves `fly-global-services` and
+  starts the server with `+sv_ip` on it.
+- **Same port inside and out.** Fly rewrites addresses, not ports, so `internal_port`
+  and `services.ports.port` are both 23073.
+- **A dedicated IPv4.** UDP doesn't work over Fly's shared IPv4 or public IPv6, so the
+  app needs its own IPv4 (`fly ips allocate-v4`, a couple of dollars a month).
+  bettersoldat's wire is IPv4 anyway.
+- **Keep the machine running.** The proxy can't wake a stopped machine for a UDP
+  packet, so `auto_stop_machines = "off"` and `min_machines_running = 1`.
+- **Packet size.** WireGuard and the UDP proxy take about 72 bytes of each packet;
+  bettersoldat's packets are at most 1200 bytes (`NET_MTU`), under the limit.
+
+### The first deploy
+
+From this directory, with [flyctl](https://fly.io/docs/flyctl/install/) installed and
+`fly auth login` done:
+
+```bash
+fly launch --no-deploy --copy-config --name bettersoldat-eu1
+```
+
+```bash
+fly ips allocate-v4
+```
+
+```bash
+fly secrets set GATHER_SECRET=...
+```
+
+```bash
+fly deploy
+```
+
+The first deploy builds bettersoldat on Fly's remote builder; expect a few minutes.
+Then:
+
+```bash
+fly ips list
+```
+
+gives the IPv4 players connect to, as `<ip>:23073`; the app's name also resolves to
+it, so `bettersoldat-eu1.fly.dev:23073` works in the client and is what goes into the
+bot's `GATHER_SERVERS` (`eu1=bettersoldat-eu1.fly.dev:23073`).
+
+### Day to day
+
+```bash
+fly logs
+```
+
+```bash
+fly status
+```
+
+```bash
+fly deploy --build-arg BETTERSOLDAT_REF=v0.3.0   # a newer bettersoldat
+```
+
+```bash
+fly scale count 1 --region ams    # it should only ever be one machine per app
+```
+
+```bash
+fly ssh console
+```
+
+The server's console reads its standard input, which a Fly machine doesn't have, so
+anything the console would be typed is said in the game instead (`!map`, `!p`, `!r`)
+or set in the environment and redeployed (`fly secrets set` for the secret,
+`fly deploy -e SV_TIMELIMIT=15` or an edit to fly.toml for the rest).

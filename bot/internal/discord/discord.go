@@ -86,7 +86,7 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 	case "status", "list", "who":
 		reply = b.svc.Status()
 	case "spec", "spectate":
-		reply = b.svc.Spec(p)
+		reply = b.svc.Spec(p, args)
 	case "info":
 		reply = b.svc.Info(p)
 	case "pick", "map":
@@ -94,7 +94,7 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 	case "maps", "pool":
 		reply = b.svc.Maps()
 	case "abort", "end", "reset":
-		reply = b.svc.Abort(p, b.isAdmin(m))
+		reply = b.svc.Abort(p, b.isAdmin(m), args)
 	case "help", "":
 		reply = b.svc.Help()
 	default:

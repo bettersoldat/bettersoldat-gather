@@ -1,0 +1,140 @@
+diff --git a/config.cfg b/config.cfg
+index eb7b7da..b262f16 100644
+--- a/config.cfg
++++ b/config.cfg
+@@ -157,6 +157,9 @@ bind alt+h "say Bye!"
+ // joins it, and what it changes there is saved back here; its rotation's first map plays
+ // first.
+ set sv_port "23073"             // the UDP port to listen on
++set sv_ip ""                    // the address to listen on; empty for every one. A host behind a UDP
++                                // proxy that rewrites addresses (fly.io's fly-global-services) must
++                                // answer from the one it is reached on, so names it here.
+ set sv_hostname "bettersoldat server" // the name on the scoreboard
+ set sv_maps ""                  // the rotation, space-separated: "Arena ctf_Ash ctf_Kampf"
+ set sv_gamemode "0"             // 0 the map's own (CTF where it has flags, a deathmatch elsewhere), 1 deathmatch, 2 CTF
+diff --git a/server/host.c b/server/host.c
+index 648459a..dbfe477 100644
+--- a/server/host.c
++++ b/server/host.c
+@@ -70,8 +70,8 @@ bool host_open(Host *h, Console *console, const HostSettings *settings)
+     game_init(h->game, (uint64_t)time(NULL), match_settings(h, h->game->ctx.map));
+     h->game->world.authority = true;
+     h->game->world.history = calloc(1, sizeof(History)); // the snapshots' deltas are against it
+-    if (!h->game->world.history || !net_listen(&h->link, settings->port, MAX_PLAYERS)) {
+-        fprintf(stderr, "could not listen on port %d\n", settings->port);
++    if (!h->game->world.history || !net_listen(&h->link, settings->ip, settings->port, MAX_PLAYERS)) {
++        fprintf(stderr, "could not listen on %s%sport %d\n", settings->ip, settings->ip[0] ? " " : "", settings->port);
+         free(h->game->world.history);
+         context_destroy(&h->game->ctx);
+         free(h->game);
+@@ -111,7 +111,8 @@ bool host_open(Host *h, Console *console, const HostSettings *settings)
+     add_bots(h);
+ 
+     if (console) {
+-        console_print(console, "hosting %s on port %d, %s, %d ticks a second\n", settings->map, settings->port,
++        console_print(console, "hosting %s on %s%sport %d, %s, %d ticks a second\n", settings->map, settings->ip,
++                      settings->ip[0] ? " " : "", settings->port,
+                       h->game->match.settings.mode == MATCH_CTF ? "capture the flag" : "deathmatch", TICK_RATE);
+     }
+     return true;
+diff --git a/server/host.h b/server/host.h
+index b90602d..bab26c4 100644
+--- a/server/host.h
++++ b/server/host.h
+@@ -20,6 +20,7 @@
+ 
+ typedef struct HostSettings {
+     uint16_t port;
++    char ip[128];                    // the address to listen on; empty for every one (sv_ip)
+     char assets[512];
+     char map[NET_MAP_SIZE];          // the first round's
+     char maps[CONSOLE_VALUE_SIZE];   // the rotation, space-separated; empty plays `map` again
+diff --git a/server/main.c b/server/main.c
+index edc4665..97648b1 100644
+--- a/server/main.c
++++ b/server/main.c
+@@ -39,6 +39,7 @@ typedef struct Server {
+     Cvar *map;
+     Cvar *maps; // the rotation
+     Cvar *port;
++    Cvar *ip; // sv_ip: the address to listen on
+     Cvar *hostname;
+     Cvar *gamemode, *timelimit, *killlimit;
+     Cvar *bots_noteam, *bots_alpha, *bots_bravo, *bots_difficulty, *bots_chat;
+@@ -202,6 +203,7 @@ static bool console_open(Server *sv, int argc, char *argv[])
+     sv->map = cvar_register(con, "map", "Arena", 0, "the map to load");
+     sv->maps = cvar_register(con, "sv_maps", "", 0, "the maps in rotation, space-separated; empty plays the map again");
+     sv->port = cvar_register(con, "sv_port", "23073", 0, "the UDP port to listen on");
++    sv->ip = cvar_register(con, "sv_ip", "", 0, "the address to listen on; empty for every one");
+     sv->hostname = cvar_register(con, "sv_hostname", "bettersoldat server", 0, "the server's name, on the scoreboard");
+     sv->gamemode = cvar_register(con, "sv_gamemode", "0", 0, "0 the map's own, 1 deathmatch, 2 capture the flag");
+     sv->timelimit = cvar_register(con, "sv_timelimit", "15", 0, "minutes a round lasts");
+@@ -245,6 +247,7 @@ static HostSettings settings_from_cvars(const Server *sv)
+         .vote_percent = sv->votepercent->integer,
+     };
+     snprintf(s.assets, sizeof s.assets, "%s", sv->assets->value);
++    snprintf(s.ip, sizeof s.ip, "%s", sv->ip->value);
+     snprintf(s.map, sizeof s.map, "%s", sv->map->value);
+     snprintf(s.maps, sizeof s.maps, "%s", sv->maps->value);
+     snprintf(s.hostname, sizeof s.hostname, "%s", sv->hostname->value);
+diff --git a/shared/network/transport.c b/shared/network/transport.c
+index be6e28c..8d7cf8f 100644
+--- a/shared/network/transport.c
++++ b/shared/network/transport.c
+@@ -8,9 +8,13 @@ bool net_init(void) { return enet_initialize() == 0; }
+ 
+ void net_shutdown(void) { enet_deinitialize(); }
+ 
+-bool net_listen(NetLink *l, uint16_t port, int max_peers)
++bool net_listen(NetLink *l, const char *ip, uint16_t port, int max_peers)
+ {
+     ENetAddress address = {.host = ENET_HOST_ANY, .port = port};
++    if (ip && ip[0] && enet_address_set_host(&address, ip) != 0) {
++        *l = (NetLink){0};
++        return false;
++    }
+     *l = (NetLink){.host = enet_host_create(&address, (size_t)max_peers, NET_CHANNELS, 0, 0)};
+     return l->host != NULL;
+ }
+diff --git a/shared/network/transport.h b/shared/network/transport.h
+index 1f32768..b0e9f7a 100644
+--- a/shared/network/transport.h
++++ b/shared/network/transport.h
+@@ -41,7 +41,10 @@ typedef struct NetEvent {
+ bool net_init(void);
+ void net_shutdown(void);
+ 
+-bool net_listen(NetLink *l, uint16_t port, int max_peers);
++// Listens on `port`, on every address when `ip` is NULL or empty, else on that one
++// alone (an address, or a name to resolve: a host behind a UDP proxy that rewrites
++// addresses answers from the one it was reached on).
++bool net_listen(NetLink *l, const char *ip, uint16_t port, int max_peers);
+ bool net_connect(NetLink *l, const char *address, uint16_t port);
+ // Tells the peer(s) goodbye and gives them a moment to hear it, then closes.
+ void net_close(NetLink *l);
+diff --git a/tests/join_test.c b/tests/join_test.c
+index 776a630..26605f0 100644
+--- a/tests/join_test.c
++++ b/tests/join_test.c
+@@ -116,7 +116,7 @@ void join_tests(void)
+     g->world.soldiers[0].active = g->world.soldiers[1].active = false; // an empty server
+ 
+     NetLink server;
+-    CHECK(net_listen(&server, PORT, 8), "the server listens on %d", PORT);
++    CHECK(net_listen(&server, NULL, PORT, 8), "the server listens on %d", PORT);
+     Connections conns;
+     CHECK(connections_init(&conns, &server, NULL, "Arena"), "the connections are made");
+ 
+diff --git a/tests/stream_test.c b/tests/stream_test.c
+index 2406890..930e77f 100644
+--- a/tests/stream_test.c
++++ b/tests/stream_test.c
+@@ -177,7 +177,7 @@ void stream_tests(void)
+     gs->world.soldiers[0].active = false;
+     gs->world.history = calloc(1, sizeof(History));
+     NetLink server;
+-    CHECK(net_listen(&server, PORT, 8), "the server listens on %d", PORT);
++    CHECK(net_listen(&server, NULL, PORT, 8), "the server listens on %d", PORT);
+     Connections conns;
+     connections_init(&conns, &server, NULL, "Arena");
+ 

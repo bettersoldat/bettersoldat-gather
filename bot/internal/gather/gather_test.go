@@ -11,25 +11,25 @@ var pool = []string{"ctf_Ash", "ctf_Kampf", "ctf_Division", "ctf_Laos", "ctf_Run
 
 func player(i int) Player { return Player{ID: fmt.Sprint(i), Name: fmt.Sprintf("p%d", i)} }
 
-func fill(t *testing.T, g *Gather) {
-	t.Helper()
-	for i := 0; i < g.Size(); i++ {
-		full, err := g.Add(player(i), time.Minute)
-		if err != nil {
-			t.Fatalf("add %d: %v", i, err)
-		}
-		if full != (i == g.Size()-1) {
-			t.Fatalf("add %d: full=%v", i, full)
-		}
+func six() []Player {
+	var ps []Player
+	for i := 0; i < 6; i++ {
+		ps = append(ps, player(i))
 	}
+	return ps
 }
 
-func TestQueueFillsIntoTeams(t *testing.T) {
+func TestStartMakesTeams(t *testing.T) {
 	g := New(3, pool, rand.New(rand.NewSource(1)))
 	first := g.Password
-	fill(t, g)
-	if g.Phase != Picking {
-		t.Fatalf("phase %v, want picking", g.Phase)
+	if err := g.Start(7, six()[:5], time.Minute); err != ErrWrongCount {
+		t.Fatalf("five players: %v", err)
+	}
+	if err := g.Start(7, six(), time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if g.ID != 7 || g.Phase != Picking {
+		t.Fatalf("id %d phase %v", g.ID, g.Phase)
 	}
 	if len(g.Teams[Alpha]) != 3 || len(g.Teams[Bravo]) != 3 {
 		t.Fatalf("teams %v / %v", g.Teams[Alpha], g.Teams[Bravo])
@@ -44,33 +44,17 @@ func TestQueueFillsIntoTeams(t *testing.T) {
 		}
 		seen[p.ID] = true
 	}
-	if _, err := g.Add(player(9), time.Minute); err != ErrInProgress {
-		t.Fatalf("add while picking: %v", err)
+	if g.TeamOf(player(9)) != -1 || g.TeamOf(player(0)) < 0 {
+		t.Fatal("TeamOf")
 	}
-	if _, err := g.Add(player(0), time.Minute); err != ErrPlaying {
-		t.Fatalf("add a member while picking: %v", err)
-	}
-}
-
-func TestQueueAddDel(t *testing.T) {
-	g := New(3, pool, rand.New(rand.NewSource(1)))
-	if _, err := g.Add(player(1), time.Minute); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := g.Add(player(1), time.Minute); err != ErrInQueue {
-		t.Fatalf("double add: %v", err)
-	}
-	if err := g.Del(player(2)); err != ErrNotInQueue {
-		t.Fatalf("del a stranger: %v", err)
-	}
-	if err := g.Del(player(1)); err != nil || len(g.Queue) != 0 {
-		t.Fatalf("del: %v, queue %v", err, g.Queue)
+	if err := g.Start(8, six(), time.Minute); err != ErrNotIdle {
+		t.Fatalf("start twice: %v", err)
 	}
 }
 
 func TestPicksAndTiebreaker(t *testing.T) {
 	g := New(3, pool, rand.New(rand.NewSource(2)))
-	fill(t, g)
+	g.Start(1, six(), time.Minute)
 	a, b := g.Teams[Alpha][0], g.Teams[Bravo][0]
 	if _, _, _, err := g.Pick(player(9), "ash"); err != ErrNotInTeam {
 		t.Fatalf("stranger's pick: %v", err)
@@ -110,7 +94,7 @@ func TestPickTimeoutFillsIn(t *testing.T) {
 	if forced, ready := g.PickTimeout(); forced != nil || ready {
 		t.Fatal("timeout while idle did something")
 	}
-	fill(t, g)
+	g.Start(1, six(), time.Minute)
 	g.Pick(g.Teams[Alpha][1], "laos")
 	forced, ready := g.PickTimeout()
 	if !ready || len(forced) != 1 || forced[Bravo] == "" || forced[Bravo] == "ctf_Laos" {
@@ -135,7 +119,7 @@ func TestResolveMap(t *testing.T) {
 func live(t *testing.T, seed int64) *Gather {
 	t.Helper()
 	g := New(3, pool, rand.New(rand.NewSource(seed)))
-	fill(t, g)
+	g.Start(1, six(), time.Minute)
 	g.Pick(g.Teams[Alpha][0], "ash")
 	g.Pick(g.Teams[Bravo][0], "kampf")
 	return g
@@ -177,9 +161,9 @@ func TestSeriesGoesToTiebreaker(t *testing.T) {
 
 func TestResetLocksServerAgain(t *testing.T) {
 	g := live(t, 6)
-	pw, spec, id := g.Password, g.SpecPassword, g.ID
+	pw, spec := g.Password, g.SpecPassword
 	g.Reset()
-	if g.Phase != Idle || g.ID != id+1 || len(g.Members()) != 0 || g.Maps() != nil {
+	if g.Phase != Idle || g.ID != 1 || len(g.Members()) != 0 || g.Maps() != nil {
 		t.Fatalf("after reset: %+v", g)
 	}
 	if g.Password == pw || g.SpecPassword == spec {
@@ -187,6 +171,9 @@ func TestResetLocksServerAgain(t *testing.T) {
 	}
 	if _, err := g.RoundEnd(RoundReport{GatherID: g.ID, MapIndex: 1, Winner: "alpha"}); err != ErrNotLive {
 		t.Fatalf("report while idle: %v", err)
+	}
+	if err := g.Start(2, six(), time.Minute); err != nil || g.ID != 2 {
+		t.Fatalf("start after reset: %v, id %d", err, g.ID)
 	}
 }
 

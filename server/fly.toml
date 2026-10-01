@@ -1,0 +1,43 @@
+# fly.io: one gather server. One app per server; copy this file per server and change
+# the app name, the region and GATHER_SERVER_NAME. README.md walks through the first
+# deploy; in short:
+#   fly launch --no-deploy --copy-config --name <app>     (once)
+#   fly ips allocate-v4                                   (once: UDP needs a dedicated IPv4)
+#   fly secrets set GATHER_SECRET=...
+#   fly deploy
+app = "bettersoldat-eu1"
+primary_region = "ams"
+
+[build]
+  dockerfile = "Dockerfile"
+  [build.args]
+    BETTERSOLDAT_REF = "main"   # a tag, branch or commit of bettersoldat to build
+
+[env]
+  SV_HOSTNAME = "bettersoldat gather eu1"
+  SV_PORT = "23073"
+  SV_MAP = "ctf_Ash"
+  SV_TIMELIMIT = "10"
+  SV_KILLLIMIT = "10"
+  # this server's name in the bot's GATHER_SERVERS, and where the bot answers
+  GATHER_SERVER_NAME = "eu1"
+  GATHER_BOT_URL = "https://gather-bot.fly.dev"
+  GATHER_GRACE = "30"
+  # GATHER_SECRET is a secret: fly secrets set GATHER_SECRET=...
+
+# UDP on fly.io: the app listens on fly-global-services (entrypoint.sh), the external
+# port must equal the internal one, and the app needs a dedicated IPv4. A machine that
+# is stopped can't be woken by a UDP packet, so it stays running.
+[[services]]
+  protocol = "udp"
+  internal_port = 23073
+  auto_stop_machines = "off"
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[services.ports]]
+    port = 23073
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
