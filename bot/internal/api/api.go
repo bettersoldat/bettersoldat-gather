@@ -1,22 +1,25 @@
-// Package api is the HTTP side the game servers' scripts talk to: each polls its
-// gather's state (the password it must ask for, the tiebreaker), posts each counted
-// round's end, and tells of joins and leaves. Every call carries the shared secret as a bearer
-// token, and the server's name in X-Gather-Server (which may be left out when the bot
-// has one server).
+// Package api is the HTTP side the game servers' scripts talk to: each keeps a request
+// open for its gather's state (the password it must ask for, the tiebreaker), answered
+// as the state changes, posts each counted round's end, and tells of joins and leaves.
+// Every call carries the shared secret as a bearer token, and the server's name in
+// X-Gather-Server (which may be left out when the bot has one server).
 //
-//	GET  /api/state          -> State
-//	POST /api/round          <- gather.RoundReport
-//	POST /api/event          <- Event
-//	GET  /healthz            (no secret)
+//	GET  /api/state[?since=N] -> State; with since, held until the state's version passes N
+//	POST /api/round           <- gather.RoundReport
+//	POST /api/event           <- Event
+//	GET  /healthz             (no secret)
 package api
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"gatherbot/internal/gather"
 )
@@ -24,9 +27,16 @@ import (
 // ServerHeader names the game server a request is from.
 const ServerHeader = "X-Gather-Server"
 
-// State is what a script needs to know, polled every few seconds.
+// LongPollWait is how long a state request with `since` is held for a change before it
+// is answered as it stands; the script's own timeout must be longer.
+const LongPollWait = 25 * time.Second
+
+// State is what a script needs to know. A script asks for it once with no `since`, and
+// from then on with the version it has: the answer comes when the state changes, so a
+// new password or gather reaches the server at once, and nothing is sent meanwhile.
 type State struct {
-	Server     string              `json:"server"` // the server's name, as the bot knows it
+	Server     string              `json:"server"`  // the server's name, as the bot knows it
+	Version    uint64              `json:"version"` // counts the changes; what `since` is compared to
 	GatherID   int                 `json:"gather_id"`
 	Phase      string              `json:"phase"` // "idle" or "live"
 	Password   string              `json:"password"`
@@ -48,6 +58,9 @@ var ErrNoServer = errors.New("no such server")
 // Backend is what the API serves: the service. Each call names the server.
 type Backend interface {
 	State(server string) (State, error)
+	// WaitState answers once the state's version passes since, or when ctx ends, with
+	// the state as it then stands.
+	WaitState(ctx context.Context, server string, since uint64) (State, error)
 	RoundEnd(server string, r gather.RoundReport) error
 	ServerEvent(server string, ev Event)
 }
@@ -83,7 +96,20 @@ func Handler(secret string, b Backend) http.Handler {
 		}
 	}
 	mux.HandleFunc("GET /api/state", auth(func(w http.ResponseWriter, r *http.Request) {
-		st, err := b.State(r.Header.Get(ServerHeader))
+		var st State
+		var err error
+		if sinceText := r.URL.Query().Get("since"); sinceText != "" {
+			since, perr := strconv.ParseUint(sinceText, 10, 64)
+			if perr != nil {
+				http.Error(w, "since must be a number", http.StatusBadRequest)
+				return
+			}
+			ctx, cancel := context.WithTimeout(r.Context(), LongPollWait)
+			defer cancel()
+			st, err = b.WaitState(ctx, r.Header.Get(ServerHeader), since)
+		} else {
+			st, err = b.State(r.Header.Get(ServerHeader))
+		}
 		if err != nil {
 			fail(w, err)
 			return

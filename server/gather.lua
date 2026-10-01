@@ -3,11 +3,13 @@
 -- +sv_script path/to/gather.lua, and set the values below or their environment
 -- variables. One bot serves several servers: each says its name with every request.
 --
--- It polls the bot for the gather's state every `poll_every` seconds and keeps the
--- server's password (sv_password) what the bot says it is: the bot makes a new one as a
--- gather starts, DMs it to the players, and makes another as it ends, so the server is
--- locked in between. It blocks map votes while a gather is on, and posts each counted
--- map's end back to the bot, which shows it in Discord.
+-- It keeps one request open to the bot for the gather's state, which the bot answers
+-- the moment the state changes (a long poll: the request says the version it has, and
+-- is asked again as soon as it returns), and keeps the server's password (sv_password)
+-- what the bot says it is: the bot makes a new one as a gather starts, DMs it to the
+-- players, and makes another as it ends, so the server is locked in between. It blocks
+-- map votes while a gather is on, and posts each counted map's end back to the bot,
+-- which shows it in Discord.
 --
 -- The maps are picked in the game. While a gather is on, !map <name> starts a map
 -- (a CTF map of the bot's pool); it counts once it runs to its end. !r replays the
@@ -22,15 +24,17 @@
 local bot_url = os.getenv("GATHER_BOT_URL") or "http://127.0.0.1:8080" -- where gatherbot listens
 local secret = os.getenv("GATHER_SECRET") or "change-me"               -- the bot's GATHER_SECRET
 local server_name = os.getenv("GATHER_SERVER_NAME") or ""              -- this server's name in the bot's GATHER_SERVERS; "" with one server
-local poll_every = tonumber(os.getenv("GATHER_POLL")) or 3             -- seconds between polls of the bot
+local retry_after = tonumber(os.getenv("GATHER_RETRY")) or 3           -- seconds before asking again when the bot is unreachable
 
 local color = "7FD6FF"
 
 -- --- the state ----------------------------------------------------------------------
 
 local state = nil   -- the bot's last word: gather_id, phase, password, tiebreaker, pool, teams
+local version = 0   -- the state's version, as last heard; the next request waits for a change past it
+local listening = false -- a request to the bot is out
+local retry_in = nil    -- seconds until the next request, after a failed one
 local bot_down = false
-local seconds = 0
 local password_set = nil -- what sv_password was last set to
 
 -- The series being played: how many maps have counted, the maps won, the map asked
@@ -107,22 +111,32 @@ local function apply(st)
     end
 end
 
-local function poll()
-    http.request({url = bot_url .. "/api/state", headers = headers(), timeout = 5}, function(r)
+-- One request to the bot at a time, for the state past the version held; the bot
+-- answers when it changes, or after some 25 seconds as it stands, and the next request
+-- goes out at once. A request that fails is tried again after retry_after seconds.
+local function listen()
+    if listening then return end
+    listening = true
+    http.request({url = bot_url .. "/api/state?since=" .. version, headers = headers(), timeout = 40}, function(r)
+        listening = false
         if r.error or r.status ~= 200 then
             if not bot_down then
                 server.print("gather: the bot is unreachable: " .. (r.error or ("status " .. r.status)))
                 bot_down = true
             end
+            retry_in = retry_after
             return
         end
         local ok, st = pcall(json.decode, r.body)
         if not ok or type(st) ~= "table" then
             server.print("gather: the bot's state did not parse")
+            retry_in = retry_after
             return
         end
         if bot_down then server.print("gather: the bot is back"); bot_down = false end
+        version = tonumber(st.version) or 0 -- a bot restarted counts from 1 again, and that is taken
         apply(st)
+        listen()
     end)
 end
 
@@ -307,10 +321,16 @@ function on_chat(slot, text, team)
     return true
 end
 
--- Every second, by the server's own ticks (on_second stands still with the world).
+-- Every second, by the server's own ticks (on_second stands still with the world): a
+-- failed request is tried again.
 local function every_second()
-    seconds = seconds + 1
-    if seconds % poll_every == 0 then poll() end
+    if retry_in then
+        retry_in = retry_in - 1
+        if retry_in <= 0 then
+            retry_in = nil
+            listen()
+        end
+    end
 end
 
 local ticks = 0
@@ -379,5 +399,5 @@ function on_round_start(map)
     end
 end
 
-server.print(("gather: script loaded, polling %s as %s"):format(bot_url, server_name ~= "" and server_name or "the only server"))
-poll()
+server.print(("gather: script loaded, listening to %s as %s"):format(bot_url, server_name ~= "" and server_name or "the only server"))
+listen()

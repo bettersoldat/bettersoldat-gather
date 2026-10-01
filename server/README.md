@@ -10,8 +10,10 @@ each tells the one bot its name.
   whatever the bot says: a new one as a gather starts, DMed to the players, and another
   as it ends, so the server is locked in between. A player joins with it from the main
   menu's Join page (`cl_password`).
-- **Runs the series.** It polls the bot every few seconds; when the bot says a gather
-  is on, the maps are started from the chat, counted when they run to their end,
+- **Runs the series.** It keeps one request open to the bot, answered the moment the
+  state changes (a long poll, re-issued as it returns), so a new gather or password
+  reaches the server at once. When the bot says a gather is on, the maps are started
+  from the chat, counted when they run to their end,
   `/votemap` is refused, and each counted map's end is posted to the bot. The series
   is over after two maps with a team ahead, or after the third.
 - **Takes a few chat commands**, from anyone but a spectator:
@@ -37,7 +39,7 @@ The script's:
 | `GATHER_BOT_URL` | where the bot answers | `http://127.0.0.1:8080` |
 | `GATHER_SECRET` | the bot's `GATHER_SECRET` | `change-me` |
 | `GATHER_SERVER_NAME` | this server's name in the bot's `GATHER_SERVERS`; may stay empty when the bot has one server | empty |
-| `GATHER_POLL` | seconds between polls of the bot | `3` |
+| `GATHER_RETRY` | seconds before asking again when the bot is unreachable | `3` |
 
 The server's, read by [entrypoint.sh](entrypoint.sh):
 

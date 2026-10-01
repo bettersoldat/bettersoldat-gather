@@ -1,12 +1,14 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"gatherbot/internal/gather"
 )
@@ -25,6 +27,13 @@ func (f *fakeBackend) State(server string) (State, error) {
 		return State{}, fmt.Errorf("%w %q", ErrNoServer, server)
 	}
 	return f.state, nil
+}
+
+func (f *fakeBackend) WaitState(ctx context.Context, server string, since uint64) (State, error) {
+	if since >= f.state.Version {
+		<-ctx.Done() // nothing changes in the fake: the wait runs out
+	}
+	return f.State(server)
 }
 
 func (f *fakeBackend) RoundEnd(server string, r gather.RoundReport) error {
@@ -66,7 +75,7 @@ func TestSecretRequired(t *testing.T) {
 }
 
 func TestState(t *testing.T) {
-	b := &fakeBackend{state: State{Server: "eu1", GatherID: 4, Phase: "live", Password: "pw", Tiebreaker: "c", Pool: []string{"a", "b", "c"}, Teams: map[string][]string{"alpha": {"x"}, "bravo": {"y"}}}}
+	b := &fakeBackend{state: State{Server: "eu1", Version: 1, GatherID: 4, Phase: "live", Password: "pw", Tiebreaker: "c", Pool: []string{"a", "b", "c"}, Teams: map[string][]string{"alpha": {"x"}, "bravo": {"y"}}}}
 	h := Handler("s3cret", b)
 	rec := do(t, h, "GET", "/api/state", "s3cret", "eu1", "")
 	if rec.Code != http.StatusOK {
@@ -84,6 +93,25 @@ func TestState(t *testing.T) {
 	}
 	if rec := do(t, h, "GET", "/api/state", "s3cret", "nowhere", ""); rec.Code != http.StatusNotFound {
 		t.Fatalf("unknown server: %d", rec.Code)
+	}
+	// since below the version answers at once; since at it waits for the request's end
+	b.state.Version = 3
+	if rec := do(t, h, "GET", "/api/state?since=2", "s3cret", "eu1", ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"version":3`) {
+		t.Fatalf("since 2: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(t, h, "GET", "/api/state?since=x", "s3cret", "eu1", ""); rec.Code != http.StatusBadRequest {
+		t.Fatalf("since x: %d", rec.Code)
+	}
+	req := httptest.NewRequest("GET", "/api/state?since=3", nil)
+	req.Header.Set("Authorization", "Bearer s3cret")
+	req.Header.Set(ServerHeader, "eu1")
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	held := httptest.NewRecorder()
+	start := time.Now()
+	h.ServeHTTP(held, req.WithContext(ctx))
+	if held.Code != http.StatusOK || time.Since(start) < 40*time.Millisecond {
+		t.Fatalf("since 3: %d after %s", held.Code, time.Since(start))
 	}
 }
 

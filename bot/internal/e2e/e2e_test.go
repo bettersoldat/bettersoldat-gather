@@ -14,6 +14,7 @@ package e2e
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -57,9 +58,21 @@ func (f *fakeBot) State(server string) (api.State, error) {
 	if err := f.check(server); err != nil {
 		return api.State{}, err
 	}
-	return api.State{Server: server, GatherID: 1, Phase: "live", Password: "playpw",
+	return api.State{Server: server, Version: 1, GatherID: 1, Phase: "live", Password: "playpw",
 		Tiebreaker: "ctf_Laos", Pool: pool,
 		Teams: map[string][]string{"alpha": {"a"}, "bravo": {"b"}}}, nil
+}
+
+// the state never changes here: a wait with the version runs to the request's end
+func (f *fakeBot) WaitState(ctx context.Context, server string, since uint64) (api.State, error) {
+	st, err := f.State(server)
+	if err != nil {
+		return st, err
+	}
+	if since >= st.Version {
+		<-ctx.Done()
+	}
+	return st, nil
 }
 
 func (f *fakeBot) RoundEnd(server string, r gather.RoundReport) error {
@@ -122,7 +135,7 @@ func TestScriptPlaysTheSeries(t *testing.T) {
 	cmd := exec.Command(exe, "+sv_port", "23999", "+map", "ctf_Ash", "+sv_maps", "", "+sv_script", script, "+sv_hostname", "e2e")
 	cmd.Dir = dir
 	// the settings, as the Docker image passes them
-	cmd.Env = append(os.Environ(), "GATHER_BOT_URL="+srv.URL, "GATHER_SECRET="+secret, "GATHER_SERVER_NAME=e2e", "GATHER_POLL=1")
+	cmd.Env = append(os.Environ(), "GATHER_BOT_URL="+srv.URL, "GATHER_SECRET="+secret, "GATHER_SERVER_NAME=e2e", "GATHER_RETRY=1")
 	hideWindow(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -188,7 +201,7 @@ func TestScriptPlaysTheSeries(t *testing.T) {
 	// (the console takes its quotes off the line, so the strings go in Lua's brackets)
 	say := func(text string) { io.WriteString(stdin, "lua on_chat(0, [["+text+"]], false)\n") }
 
-	waitFor("gather: script loaded, polling "+srv.URL+" as e2e", 15*time.Second)
+	waitFor("gather: script loaded, listening to "+srv.URL+" as e2e", 15*time.Second)
 	waitFor("gather: #1 is on; the tiebreaker is ctf_Laos", 15*time.Second)
 
 	// the password is the server's own now: the script set sv_password to the bot's word

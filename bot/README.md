@@ -123,7 +123,7 @@ out when the bot has one server):
 
 | call | what |
 |---|---|
-| `GET /api/state` | `{server, gather_id, phase, password, tiebreaker, pool, teams}`; `phase` is `idle` or `live`, `password` what the server must ask, `tiebreaker` the third map, `pool` what `!map` may load |
+| `GET /api/state` | `{server, version, gather_id, phase, password, tiebreaker, pool, teams}`; `phase` is `idle` or `live`, `password` what the server must ask, `tiebreaker` the third map, `pool` what `!map` may load. With `?since=<version>` the answer is held until the state changes (or 25 seconds pass): the script's long poll, so a change reaches the server at once and nothing is sent meanwhile |
 | `POST /api/round` | a counted map's end: `{gather_id, map_index, map, why, scores, winner, players, done}` |
 | `POST /api/event` | `{type: "join" or "leave", slot, name}`, for `!beta_status` to say who is on the server |
 | `GET /healthz` | `ok`, no secret |

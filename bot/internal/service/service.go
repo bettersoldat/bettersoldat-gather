@@ -5,6 +5,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -45,6 +46,8 @@ type server struct {
 	addr     string
 	g        *gather.Gather
 	onServer map[int]string // slot -> name, from the script's join and leave events
+	version  uint64         // counts the changes to what the script is told (api.State)
+	changed  chan struct{}  // closed, and made anew, at each: what a waiting script hangs on
 }
 
 // Service is the queue, the servers and everything around them.
@@ -79,7 +82,8 @@ func New(cfg Config, n Notifier) *Service {
 	}
 	s := &Service{cfg: cfg, byName: map[string]*server{}, nextID: 1, n: n}
 	for _, sc := range cfg.Servers {
-		srv := &server{name: sc.Name, addr: sc.Addr, g: gather.New(cfg.TeamSize, cfg.Pool, nil), onServer: map[int]string{}}
+		srv := &server{name: sc.Name, addr: sc.Addr, g: gather.New(cfg.TeamSize, cfg.Pool, nil), onServer: map[int]string{},
+			version: 1, changed: make(chan struct{})}
 		s.servers = append(s.servers, srv)
 		s.byName[strings.ToLower(sc.Name)] = srv
 	}
@@ -100,6 +104,13 @@ func (s *Service) announce(text string) {
 }
 
 func (s *Service) cmd(name string) string { return s.cfg.Prefix + name }
+
+// bump: what srv's script is told has changed; whoever waits on it is let go.
+func (s *Service) bump(srv *server) {
+	srv.version++
+	close(srv.changed)
+	srv.changed = make(chan struct{})
+}
 
 func (s *Service) size() int { return 2 * s.cfg.TeamSize }
 
@@ -337,6 +348,7 @@ func (s *Service) Abort(p gather.Player, admin bool, name string) string {
 	}
 	title := s.title(srv)
 	srv.g.Reset()
+	s.bump(srv)
 	s.announce(fmt.Sprintf("%s aborted by %s. The server's password has been changed; `%s` to queue.", title, p.Name, s.cmd("add")))
 	s.startWaiting(srv)
 	return "aborted."
@@ -375,9 +387,39 @@ func (s *Service) State(name string) (api.State, error) {
 	if err != nil {
 		return api.State{}, err
 	}
+	return s.stateOf(srv), nil
+}
+
+// WaitState is State once the version passes since, or as ctx ends: a script's long
+// poll, answered the moment something changes.
+func (s *Service) WaitState(ctx context.Context, name string, since uint64) (api.State, error) {
+	s.mu.Lock()
+	srv, err := s.apiServer(name)
+	if err != nil {
+		s.mu.Unlock()
+		return api.State{}, err
+	}
+	if srv.version > since {
+		st := s.stateOf(srv)
+		s.mu.Unlock()
+		return st, nil
+	}
+	changed := srv.changed
+	s.mu.Unlock()
+	select {
+	case <-changed:
+	case <-ctx.Done():
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.stateOf(srv), nil
+}
+
+func (s *Service) stateOf(srv *server) api.State {
 	g := srv.g
 	st := api.State{
 		Server:     srv.name,
+		Version:    srv.version,
 		GatherID:   g.ID,
 		Phase:      g.Phase.String(),
 		Password:   g.Password,
@@ -392,7 +434,7 @@ func (s *Service) State(name string) (api.State, error) {
 		}
 		st.Teams[gather.TeamName(t)] = names
 	}
-	return st, nil
+	return st
 }
 
 // apiServer is the server a script means: by name, or the only one when it says none.
@@ -454,6 +496,7 @@ func (s *Service) start(srv *server) {
 		return
 	}
 	s.nextID++
+	s.bump(srv)
 	s.started(srv)
 }
 
@@ -510,6 +553,7 @@ func (s *Service) finish(srv *server) {
 		result = fmt.Sprintf("**%s wins** %d - %d", teamTitle(w), g.Wins[w], g.Wins[1-w])
 	}
 	g.Reset()
+	s.bump(srv)
 	s.announce(fmt.Sprintf("**%s is over:** %s. The server's password has been changed. `%s` to queue for the next one.", title, result, s.cmd("add")))
 	s.startWaiting(srv)
 }

@@ -1,10 +1,12 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"gatherbot/internal/api"
 	"gatherbot/internal/gather"
@@ -302,6 +304,52 @@ func TestTwoServersPlayAtOnce(t *testing.T) {
 	}
 	if reply := s.Abort(player(20), false, "eu1"); !strings.Contains(reply, "your own gather") {
 		t.Fatalf("a player aborting another server's: %q", reply)
+	}
+}
+
+func TestWaitStateAnswersOnChange(t *testing.T) {
+	s := newService(newNotifier())
+	st := state(t, s, "")
+	if st.Version != 1 {
+		t.Fatalf("first version %d", st.Version)
+	}
+	// nothing changes: the wait ends with the context, same version
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	if got, err := s.WaitState(ctx, "", st.Version); err != nil || got.Version != st.Version {
+		t.Fatalf("wait with nothing: %+v %v", got, err)
+	}
+	// a gather starting is a change: the wait returns with the new password
+	done := make(chan api.State, 1)
+	go func() {
+		got, _ := s.WaitState(context.Background(), "", st.Version)
+		done <- got
+	}()
+	time.Sleep(20 * time.Millisecond)
+	fill(t, s, 0)
+	select {
+	case got := <-done:
+		if got.Version != st.Version+1 || got.Phase != "live" || got.Password == st.Password {
+			t.Fatalf("after the change: %+v", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the wait never returned")
+	}
+	// an older version is answered at once
+	ctx2, cancel2 := context.WithTimeout(context.Background(), time.Second)
+	defer cancel2()
+	start := time.Now()
+	if got, _ := s.WaitState(ctx2, "", 0); got.Version != st.Version+1 || time.Since(start) > 500*time.Millisecond {
+		t.Fatalf("stale since: %+v after %s", got, time.Since(start))
+	}
+	if _, err := s.WaitState(ctx2, "nowhere", 0); err == nil {
+		t.Fatal("a wait on an unknown server was served")
+	}
+	// the end of the series is a change too
+	s.RoundEnd("", gather.RoundReport{GatherID: 1, MapIndex: 1, Map: "ctf_Ash", Winner: "alpha"})
+	s.RoundEnd("", gather.RoundReport{GatherID: 1, MapIndex: 2, Map: "ctf_Ash", Winner: "alpha"})
+	if state(t, s, "").Version != st.Version+2 {
+		t.Fatalf("version after the series: %d", state(t, s, "").Version)
 	}
 }
 
