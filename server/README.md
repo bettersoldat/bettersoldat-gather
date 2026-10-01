@@ -63,15 +63,14 @@ command line or in its `config.cfg`.
 
 ## The image
 
-[Dockerfile](Dockerfile) clones bettersoldat at `BETTERSOLDAT_REF` (a tag, branch or
-commit; `main` by default), builds the headless server with xmake, and keeps the
-executable, `config.cfg`, the assets a server reads (no art, no sound) and the script.
-The build installs SDL2's development headers, which the server never uses, because
-xmake installs every package the project requires as it configures; it takes a few
-minutes the first time.
+[Dockerfile](Dockerfile) downloads bettersoldat's Linux server release
+(`bettersoldat-<version>-linux-x86_64-server.tar.gz` from
+[the releases](https://github.com/bettersoldat/bettersoldat/releases): the executable,
+`config.cfg` and the assets a server reads) and adds the script. Nothing is compiled.
+`BETTERSOLDAT_VERSION` is a release tag, or `latest` for the newest.
 
 ```bash
-docker build -t bettersoldat-gather --build-arg BETTERSOLDAT_REF=main .
+docker build -t bettersoldat-gather --build-arg BETTERSOLDAT_VERSION=latest .
 ```
 
 ```bash
@@ -80,8 +79,9 @@ docker run -p 23073:23073/udp -e GATHER_BOT_URL=https://gather-bot.fly.dev -e GA
 
 The entrypoint sets the server's `sv_ip` cvar (`feat(server): sv_ip, the address to
 listen on`, after v0.2.0): `+sv_ip <address>` binds that address alone, empty binds
-every one. The build refuses a `BETTERSOLDAT_REF` from before it, since a server that
-listens on every address goes unanswered on fly.io.
+every one. The build refuses a release from before it, since a server that listens on
+every address goes unanswered on fly.io; v0.2.0 is such a release, so the first that
+works here is the one tagged after that commit.
 
 ## On fly.io
 
@@ -126,7 +126,6 @@ fly secrets set GATHER_SECRET=...
 fly deploy
 ```
 
-The first deploy builds bettersoldat on Fly's remote builder; expect a few minutes.
 Then:
 
 ```bash
@@ -148,7 +147,7 @@ fly status
 ```
 
 ```bash
-fly deploy --build-arg BETTERSOLDAT_REF=v0.3.0   # a newer bettersoldat
+fly deploy --build-arg BETTERSOLDAT_VERSION=v0.3.0   # a particular bettersoldat release; "latest" otherwise
 ```
 
 ```bash
