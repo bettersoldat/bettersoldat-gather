@@ -73,7 +73,7 @@ func fill(t *testing.T, s *Service, from int) string {
 	var reply string
 	for i := from; i < from+6; i++ {
 		reply = s.Add(player(i))
-		if i < from+5 && !strings.Contains(reply, fmt.Sprintf("(%d/6)", i-from+1)) {
+		if i < from+5 && !strings.Contains(reply, fmt.Sprintf("**Queue** %d/6", i-from+1)) {
 			t.Fatalf("add %d: %q", i, reply)
 		}
 	}
@@ -130,13 +130,13 @@ func TestFillGoesLiveDMsEveryoneAndAnnounces(t *testing.T) {
 	if reply := s.Add(player(0)); !strings.Contains(reply, "already playing in gather #1") {
 		t.Fatalf("add while playing: %q", reply)
 	}
-	if reply := s.Add(player(7)); !strings.Contains(reply, "(1/6)") {
+	if reply := s.Add(player(7)); !strings.HasPrefix(reply, "joined the queue.\n**Queue** 1/6 · 5 left\np7 - 👻") {
 		t.Fatalf("the queue did not go on: %q", reply)
 	}
 	if reply := s.Add(player(7)); reply != ErrInQueue.Error() {
 		t.Fatalf("double add: %q", reply)
 	}
-	if reply := s.Del(player(7)); !strings.Contains(reply, "(0/6)") {
+	if reply := s.Del(player(7)); !strings.HasPrefix(reply, "left the queue.\n**Queue** 0/6 · 6 left\n👻 - 👻") {
 		t.Fatalf("del: %q", reply)
 	}
 	if reply := s.Del(player(7)); reply != ErrNotInQueue.Error() {
@@ -167,9 +167,6 @@ func TestSeriesEnds(t *testing.T) {
 	}
 	if state(t, s, "").Phase != "live" {
 		t.Fatal("ended after one map")
-	}
-	if !strings.Contains(s.Status(), "1 of 3 maps played") || !strings.Contains(s.Status(), "1. ctf_Ash 5 - 2") {
-		t.Fatalf("status: %q", s.Status())
 	}
 	if err := report(2, "ctf_Kampf", "bravo", 1, 4); err != nil {
 		t.Fatal(err)
@@ -213,9 +210,8 @@ func TestAbortAndStatus(t *testing.T) {
 	s.ServerEvent("", api.Event{Type: "join", Slot: 1, Name: "Minor"})
 	s.ServerEvent("", api.Event{Type: "leave", Slot: 1, Name: "Minor"})
 	s.ServerEvent("nowhere", api.Event{Type: "join", Slot: 2, Name: "Ghost"})
-	status := s.Status()
-	if !strings.Contains(status, "gather #1, live") || !strings.Contains(status, "On the server now: Major") || strings.Contains(status, "Minor") || strings.Contains(status, "Ghost") {
-		t.Fatalf("status: %q", status)
+	if status := s.Status(); !strings.HasPrefix(status, "**Queue** 0/6 · 6 left") || strings.Contains(status, "Major") {
+		t.Fatalf("status is the queue alone: %q", status)
 	}
 	pw := state(t, s, "").Password
 	if reply := s.Abort(player(0), false, ""); reply != "aborted." {
@@ -228,7 +224,7 @@ func TestAbortAndStatus(t *testing.T) {
 	if !strings.Contains(n.last(), "Gather #1 aborted by p0") {
 		t.Fatalf("abort announcement: %q", n.last())
 	}
-	if !strings.Contains(s.Status(), "**Queue** 0/6") || !strings.Contains(s.Status(), "free") {
+	if !strings.HasPrefix(s.Status(), "**Queue** 0/6 · 6 left") {
 		t.Fatalf("idle status: %q", s.Status())
 	}
 	if !strings.Contains(s.Maps(), "ctf_Ash, ctf_Division") || !strings.Contains(s.Help(), "!beta_add") || !strings.Contains(s.Help(), "!tb") {
@@ -274,9 +270,8 @@ func TestTwoServersPlayAtOnce(t *testing.T) {
 	if reply := s.Spec(player(99), "na1"); reply != "check your DMs." || !strings.Contains(n.dms["99"][0], na.Password) {
 		t.Fatalf("spec na1: %q", reply)
 	}
-	status := s.Status()
-	if !strings.Contains(status, "**Queue** 6/6") || !strings.Contains(status, "**eu1**") || !strings.Contains(status, "**na1**") {
-		t.Fatalf("status: %q", status)
+	if status := s.Status(); !strings.HasPrefix(status, "**Queue** 6/6\np20 - p21") || strings.Contains(status, "left") {
+		t.Fatalf("a full queue waiting for a server: %q", status)
 	}
 
 	// na1's gather is won 2-0; the waiting gather starts there
@@ -364,5 +359,21 @@ func TestRoundReportForTheWrongServer(t *testing.T) {
 	}
 	if err := s.RoundEnd("zz", gather.RoundReport{GatherID: 1, MapIndex: 1}); err == nil {
 		t.Fatal("report from nowhere was taken")
+	}
+}
+
+// The board: a line of how many are in and how many are wanted, then the places on one
+// line in the order they were taken, a ghost for each left, and anyone past a full
+// gather counted beneath; a name's markdown shows as written.
+func TestQueueBoard(t *testing.T) {
+	s := newService(nil)
+	s.Add(gather.Player{ID: "a", Name: "Alice"})
+	if reply := s.Add(gather.Player{ID: "b", Name: "__bob__"}); reply != "joined the queue.\n"+
+		"**Queue** 2/6 · 4 left\nAlice - "+`\_\_bob\_\_`+" - 👻 - 👻 - 👻 - 👻" {
+		t.Fatalf("board after two: %q", reply)
+	}
+	s.queue = append(s.queue, player(1), player(2), player(3), player(4), player(5))
+	if status := s.Status(); status != "**Queue** 6/6\nAlice - "+`\_\_bob\_\_`+" - p1 - p2 - p3 - p4\n+1 waiting for the next gather" {
+		t.Fatalf("board past full: %q", status)
 	}
 }

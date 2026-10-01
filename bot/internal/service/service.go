@@ -12,7 +12,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	"gatherbot/internal/api"
 	"gatherbot/internal/gather"
@@ -195,12 +194,12 @@ func (s *Service) Add(p gather.Player) string {
 	}
 	s.queue = append(s.queue, p)
 	if len(s.queue) < s.size() {
-		return fmt.Sprintf("added to the queue (%d/%d).", len(s.queue), s.size())
+		return "joined the queue.\n" + s.board()
 	}
 	srv := s.idleServer()
 	if srv == nil {
-		s.announce(fmt.Sprintf("The queue is full, but every server is busy: the gather starts as soon as one frees up (`%s` shows them).", s.cmd("status")))
-		return "added: the queue is full, waiting for a free server."
+		s.announce("The queue is full, but every server is busy: the gather starts as soon as one frees up.")
+		return "joined: the queue is full, waiting for a free server.\n" + s.board()
 	}
 	s.start(srv)
 	return fmt.Sprintf("added: %s is on!", strings.ToLower(s.title(srv)))
@@ -213,7 +212,7 @@ func (s *Service) Del(p gather.Player) string {
 	for i, q := range s.queue {
 		if q.ID == p.ID {
 			s.queue = append(s.queue[:i], s.queue[i+1:]...)
-			return fmt.Sprintf("removed from the queue (%d/%d).", len(s.queue), s.size())
+			return "left the queue.\n" + s.board()
 		}
 	}
 	if srv := s.serverOf(p); srv != nil {
@@ -222,45 +221,51 @@ func (s *Service) Del(p gather.Player) string {
 	return ErrNotInQueue.Error()
 }
 
-// Status tells where the queue and every server stand.
+// Status is the queue: the same board an add or a del shows.
 func (s *Service) Status() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.board()
+}
+
+// emptySlot marks a place in the queue nobody has taken.
+const emptySlot = "👻"
+
+// board is the queue as the channel sees it: how many are in and how many are still
+// wanted, then the places on one line, the name of whoever took each or a ghost. Past
+// a full gather (every server busy) the rest are counted under it.
+func (s *Service) board() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "**Queue** %d/%d", len(s.queue), s.size())
-	if len(s.queue) > 0 {
-		fmt.Fprintf(&b, ": %s", gather.Names(s.queue))
+	n, size := len(s.queue), s.size()
+	fmt.Fprintf(&b, "**Queue** %d/%d", min(n, size), size)
+	if n < size {
+		fmt.Fprintf(&b, " · %d left", size-n)
 	}
-	fmt.Fprintf(&b, " — `%s` to join.", s.cmd("add"))
-	for _, srv := range s.servers {
-		b.WriteString("\n")
-		s.serverStatus(&b, srv)
+	slots := make([]string, size)
+	for i := range slots {
+		slots[i] = emptySlot
+		if i < n {
+			slots[i] = escapeMarkdown(s.queue[i].Name)
+		}
+	}
+	b.WriteString("\n" + strings.Join(slots, " - "))
+	if n > size {
+		fmt.Fprintf(&b, "\n+%d waiting for the next gather", n-size)
 	}
 	return b.String()
 }
 
-func (s *Service) serverStatus(b *strings.Builder, srv *server) {
-	g := srv.g
-	head := fmt.Sprintf("**%s** (`%s`)", srv.name, srv.addr)
-	if len(s.servers) == 1 {
-		head = fmt.Sprintf("**Server** `%s`", srv.addr)
-	}
-	switch g.Phase {
-	case gather.Idle:
-		fmt.Fprintf(b, "%s — free", head)
-	case gather.Live:
-		fmt.Fprintf(b, "%s — gather #%d, live for %s", head, g.ID, time.Since(g.Started).Round(time.Minute))
-		for t := range g.Teams {
-			fmt.Fprintf(b, "\n%s: %s", teamTitle(t), gather.Names(g.Teams[t]))
+// escapeMarkdown keeps a name from formatting the board: a name with underscores or
+// asterisks in it shows as written.
+func escapeMarkdown(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		if strings.ContainsRune(`\*_~|`+"`", r) {
+			b.WriteRune('\\')
 		}
-		fmt.Fprintf(b, "\nSeries: Alpha %d - %d Bravo, %d of 3 maps played; tiebreaker %s", g.Wins[gather.Alpha], g.Wins[gather.Bravo], len(g.Results), g.Tiebreaker)
-		for _, r := range g.Results {
-			fmt.Fprintf(b, "\n  %d. %s %d - %d", r.MapIndex, r.Map, r.Scores.Alpha, r.Scores.Bravo)
-		}
+		b.WriteRune(r)
 	}
-	if names := onServerNames(srv); len(names) > 0 {
-		fmt.Fprintf(b, "\nOn the server now: %s", strings.Join(names, ", "))
-	}
+	return b.String()
 }
 
 // Spec sends p what it takes to watch the gather on server name ("" for the one
@@ -360,7 +365,7 @@ func (s *Service) Help() string {
 	lines := []string{
 		fmt.Sprintf("`%s` — join the queue (%dv%d CTF, best of three)", c("add"), s.cfg.TeamSize, s.cfg.TeamSize),
 		fmt.Sprintf("`%s` — leave the queue", c("del")),
-		fmt.Sprintf("`%s` — the queue and every server", c("status")),
+		fmt.Sprintf("`%s` — who is in the queue", c("status")),
 		fmt.Sprintf("`%s` — the map pool", c("maps")),
 		fmt.Sprintf("`%s` — get your server info again", c("info")),
 	}
@@ -622,13 +627,4 @@ func teamIndex(name string) int {
 		return gather.Alpha
 	}
 	return gather.Bravo
-}
-
-func onServerNames(srv *server) []string {
-	names := make([]string, 0, len(srv.onServer))
-	for _, n := range srv.onServer {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	return names
 }
