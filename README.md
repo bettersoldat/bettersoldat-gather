@@ -13,5 +13,6 @@ Each has a Dockerfile, a fly.toml and a README with its setup: the bot's covers 
 Discord application and its environment, the server's the fly.io commands and what UDP
 needs there.
 
-3v3 CTF, best of three: `!beta_add` to queue, each team `!beta_pick`s a map, the bot
-picks the tiebreaker, the server plays it only at 1-1. No rankings, nothing persisted.
+3v3 CTF, best of three: `!beta_add` to queue; in the game `!map <map>` starts a map,
+`!r` replays it, and at 1-1 `!tb` plays the tiebreaker the bot drew. No rankings,
+nothing persisted.

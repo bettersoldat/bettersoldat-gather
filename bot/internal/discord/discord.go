@@ -89,8 +89,6 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		reply = b.svc.Spec(p, args)
 	case "info":
 		reply = b.svc.Info(p)
-	case "pick", "map":
-		reply = b.svc.Pick(p, args)
 	case "maps", "pool":
 		reply = b.svc.Maps()
 	case "abort", "end", "reset":

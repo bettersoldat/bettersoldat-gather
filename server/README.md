@@ -12,18 +12,23 @@ each tells the one bot its name.
   teams; the spectators' keeps them in the spectators (taking a team gets them kicked).
   Both change as a gather fills and again as it ends, so the server is locked in
   between. Bots are left alone.
-- **Plays the series.** It polls the bot every few seconds; when the bot says a gather
-  is live it switches to Alpha's map, then Bravo's, then the tiebreaker if it is 1-1,
-  refuses `/votemap` meanwhile, and posts each round's end to the bot.
+- **Runs the series.** It polls the bot every few seconds; when the bot says a gather
+  is on, the maps are started from the chat, counted when they run to their end,
+  `/votemap` is refused, and each counted map's end is posted to the bot. The series
+  is over after two maps with a team ahead, or after the third.
 - **Takes a few chat commands**, from anyone but a spectator:
 
 | said | what |
 |---|---|
-| `!map <name>` | loads a CTF map of the bot's pool (`ash` finds ctf_Ash), between gathers |
+| `!map <name>` | starts a CTF map of the bot's pool (`ash` finds ctf_Ash) as the series' next map; with no gather on, just changes the map |
+| `!r` | replays the current map from the start; the round it cuts short counts for nothing |
+| `!tb` | at 1-1 after two maps, plays the tiebreaker the bot drew |
 | `!p` | pauses the game |
 | `!up` | counts 3, 2, 1 and goes on |
-| `!r` | replays the current map from the start; in a gather the round so far doesn't count |
 | `!status` | the gather, the teams, the series, and the round's score and time (spectators too) |
+
+A map started while another counted map is on cuts that one short, uncounted. After
+a counted map ends, the rotation plays it again as warm-up until the next `!map`.
 
 ## Environment
 

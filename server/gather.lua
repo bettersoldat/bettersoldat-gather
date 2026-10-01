@@ -6,14 +6,16 @@
 -- It keeps the server to the gather: whoever joins must say /pw <password> in the chat
 -- within `grace` seconds, with the password the bot DMed them (or the spectators'
 -- one, which keeps them out of the teams), or is kicked. It polls the bot for the
--- gather's state every `poll_every` seconds, plays the gather's maps in order when one
--- goes live (the tiebreaker only on 1-1), blocks map votes meanwhile, and posts each
--- round's end back to the bot, which shows it in Discord.
+-- gather's state every `poll_every` seconds, blocks map votes while one is on, and
+-- posts each counted map's end back to the bot, which shows it in Discord.
 --
--- In the chat, anyone but a spectator may say !map <name> (a CTF map of the bot's
--- pool, between gathers), !p to pause, !up to count 3, 2, 1 and go on, and !r to
--- replay the current map from the start, which in a gather counts for nothing;
--- anyone may say !status for the gather, the series and the round's score.
+-- The maps are picked in the game. While a gather is on, !map <name> starts a map
+-- (a CTF map of the bot's pool); it counts once it runs to its end. !r replays the
+-- map from the start, so the round it cuts short counts for nothing; !map another
+-- map does the same. After two maps split 1-1, !tb plays the tiebreaker the bot
+-- drew. The series is over after two maps with a team ahead, or after the third.
+-- With no gather on, !map changes the map freely. Anyone but a spectator may say
+-- those, and !p to pause and !up to count 3, 2, 1 and go on; anyone may say !status.
 
 -- The settings, from the environment when it has them (the Docker image sets them),
 -- else the values here.
@@ -27,16 +29,19 @@ local color = "7FD6FF"
 
 -- --- the state ----------------------------------------------------------------------
 
-local state = nil   -- the bot's last word: gather_id, phase, password, spec_password, maps, teams
+local state = nil   -- the bot's last word: gather_id, phase, password, spec_password, tiebreaker, pool, teams
 local bot_down = false
 local seconds = 0
 
--- the series being played: the maps, which is on, and the maps won
-local series = {id = nil, maps = {}, index = 0, ended = 0, playing = false, done = true,
-                wins = {alpha = 0, bravo = 0}}
+-- The series being played: how many maps have counted, the maps won, the map asked
+-- for with !map or !tb and not yet started, and whether the round on now counts.
+local series = {id = nil, tiebreaker = nil, played = 0, wins = {alpha = 0, bravo = 0},
+                wanted = nil, counting = false, cut = false, done = true}
 
 local auth = {}      -- slot -> "play" or "spec", once /pw was said right
 local joined_at = {} -- slot -> os.time() of the join
+
+local countdown = nil -- ticks left until the game goes on, while !up counts
 
 -- --- talking to the bot --------------------------------------------------------------
 
@@ -60,32 +65,35 @@ end
 
 -- --- the series ---------------------------------------------------------------------------
 
+local function in_series() return series.id and not series.done end
+
+local function tied() return series.wins.alpha == series.wins.bravo end
+
 local function begin_series(st)
-    series = {id = st.gather_id, maps = st.maps, index = 1, ended = 0, playing = false, done = false,
-              wins = {alpha = 0, bravo = 0}}
-    server.print(("gather: #%d is live: %s"):format(st.gather_id, table.concat(st.maps, ", ")))
-    server.say(("Gather #%d is live! %s, then %s, then %s if it is 1-1."):format(
-        st.gather_id, st.maps[1], st.maps[2], st.maps[3] or "nothing"), color)
-    server.next_map(st.maps[1])
+    series = {id = st.gather_id, tiebreaker = st.tiebreaker, played = 0, wins = {alpha = 0, bravo = 0},
+              wanted = nil, counting = false, cut = false, done = false}
+    server.print(("gather: #%d is on; the tiebreaker is %s"):format(st.gather_id, tostring(st.tiebreaker)))
+    server.say(("Gather #%d is on! Say !map <map> to start map 1; a map counts once it runs to its end. The tiebreaker, at 1-1, is %s (!tb)."):format(
+        st.gather_id, tostring(st.tiebreaker)), color)
 end
 
-local function abort_series(why)
-    if series.id and not series.done then
+local function end_series(why)
+    if in_series() then
         server.print("gather: #" .. series.id .. " " .. why)
         server.say("Gather #" .. series.id .. " " .. why, color)
     end
     series.done = true
-    series.playing = false
+    series.counting = false
+    series.wanted = nil
 end
 
 local function apply(st)
     local was = state
     state = st
-    if st.phase == "live" and type(st.maps) == "table" and #st.maps >= 2 then
+    if st.phase == "live" then
         if series.id ~= st.gather_id then begin_series(st) end
-    elseif series.id == st.gather_id or (series.id and st.gather_id ~= series.id) then
-        -- the bot ended or aborted what we were playing
-        abort_series("was ended in Discord")
+    elseif series.id then
+        end_series("was ended in Discord")
     end
     if was and was.password ~= st.password then server.print("gather: the password has changed") end
 end
@@ -107,6 +115,140 @@ local function poll()
         if bot_down then server.print("gather: the bot is back"); bot_down = false end
         apply(st)
     end)
+end
+
+-- --- the chat commands: !map, !tb, !r, !p, !up, !status --------------------------------
+
+local function who(slot)
+    local p = server.player(slot)
+    return p and p.name or "someone"
+end
+
+-- The map `name` names in the bot's pool: as given, in any case, with or without the
+-- ctf_ prefix, or as the one map it is a prefix of. The pool is the bot's, so only a
+-- map that is there is ever loaded: the server stops on a map it can't load.
+local function resolve_map(name)
+    local pool = state and state.pool or {}
+    local want = name:lower():gsub("^%s+", ""):gsub("%s+$", "")
+    if want == "" then return nil end
+    local bare = want:gsub("^ctf_", "")
+    local prefixed = {}
+    for _, m in ipairs(pool) do
+        local low = m:lower()
+        local lowbare = low:gsub("^ctf_", "")
+        if low == want or lowbare == bare then return m end
+        if lowbare:sub(1, #bare) == bare then prefixed[#prefixed + 1] = m end
+    end
+    if #prefixed == 1 then return prefixed[1] end
+    return nil
+end
+
+-- Loads `map` as the series' next counted map (or freely, with no series on).
+local function play(slot, map, what)
+    if series.counting then
+        series.cut = true
+        server.say(("The round on %s is cut short and counts for nothing."):format(server.map()), color)
+    end
+    if in_series() then
+        series.wanted = map
+        server.say(("%s starts map %d of 3: %s%s"):format(who(slot), series.played + 1, map, what or ""), color)
+    else
+        server.say(("%s changes the map to %s"):format(who(slot), map), color)
+    end
+    server.next_map(map)
+end
+
+local function cmd_map(slot, name)
+    if not state then
+        server.say_to(slot, "The gather bot is not reachable, so no map list to check against.", color)
+        return
+    end
+    if in_series() and series.played >= 2 then
+        if tied() then server.say_to(slot, "It is 1-1: say !tb for the tiebreaker, " .. tostring(series.tiebreaker) .. ".", color)
+        else server.say_to(slot, "The series is decided; wait for the bot to close it.", color) end
+        return
+    end
+    local map = resolve_map(name or "")
+    if not map then
+        server.say_to(slot, "No CTF map called '" .. (name or "") .. "' in the pool.", color)
+        return
+    end
+    play(slot, map)
+end
+
+local function cmd_tiebreaker(slot)
+    if not in_series() then
+        server.say_to(slot, "No gather is on.", color)
+        return
+    end
+    if series.played ~= 2 or not tied() then
+        server.say_to(slot, ("No tiebreaker yet: %d of 3 maps played, alpha %d - %d bravo."):format(
+            series.played, series.wins.alpha, series.wins.bravo), color)
+        return
+    end
+    if not series.tiebreaker or series.tiebreaker == "" then
+        server.say_to(slot, "The bot drew no tiebreaker; !map one.", color)
+        return
+    end
+    play(slot, series.tiebreaker, " (the tiebreaker)")
+end
+
+local function cmd_restart(slot)
+    if in_series() and not series.counting then
+        server.say_to(slot, "No map of the gather is on; !map <map> starts one.", color)
+        return
+    end
+    local map = server.map()
+    if series.counting then
+        series.cut = true
+        series.wanted = map -- the replay counts
+    end
+    server.say(("%s restarts the round on %s"):format(who(slot), map), color)
+    server.next_map(map)
+end
+
+local function cmd_pause(slot)
+    countdown = nil
+    if server.pause() then server.say(("Game paused by %s. !up to go on."):format(who(slot)), color)
+    else server.say_to(slot, "The game is already paused.", color) end
+end
+
+local function cmd_unpause(slot)
+    if not server.paused() then
+        server.say_to(slot, "The game is not paused.", color)
+        return
+    end
+    if countdown then return end
+    countdown = 3 * 60
+    server.say("3", color)
+end
+
+local function cmd_status(slot)
+    local lines = {}
+    if not state then
+        lines[#lines + 1] = "The gather bot is unreachable; no gather can start."
+    elseif state.phase == "idle" then
+        lines[#lines + 1] = ("Gather #%d: nobody playing yet; !beta_add in Discord to queue."):format(state.gather_id)
+    else
+        lines[#lines + 1] = ("Gather #%d: live"):format(state.gather_id)
+        if state.teams then
+            lines[#lines + 1] = ("Alpha: %s | Bravo: %s"):format(
+                table.concat(state.teams.alpha or {}, ", "), table.concat(state.teams.bravo or {}, ", "))
+        end
+    end
+    if in_series() then
+        local now
+        if series.counting then now = "this map counts"
+        elseif series.wanted then now = series.wanted .. " is loading"
+        elseif series.played >= 2 and tied() then now = "say !tb for the tiebreaker"
+        else now = "say !map <map> for map " .. (series.played + 1) end
+        lines[#lines + 1] = ("Series: alpha %d - %d bravo, %d of 3 maps played; %s. Tiebreaker: %s."):format(
+            series.wins.alpha, series.wins.bravo, series.played, now, tostring(series.tiebreaker))
+    end
+    local s, left = server.scores(), math.floor(server.time_left())
+    lines[#lines + 1] = ("Now on %s: alpha %d - %d bravo, %d:%02d left%s"):format(
+        server.map(), s.alpha, s.bravo, left // 60, left % 60, server.paused() and ", paused" or "")
+    for _, line in ipairs(lines) do server.say_to(slot, line, color) end
 end
 
 -- --- the hooks ---------------------------------------------------------------------------
@@ -143,110 +285,6 @@ function on_command(slot, text)
     return true
 end
 
--- --- the chat commands: !map, !p, !up, !r ---------------------------------------------
-
-local countdown = nil -- ticks left until the game goes on, while !up counts
-local restarting = false -- !r: the round ending now is replayed, not counted
-
-local function in_series() return series.id and not series.done end
-
-local function who(slot)
-    local p = server.player(slot)
-    return p and p.name or "someone"
-end
-
--- The map `name` names in the bot's pool: as given, in any case, with or without the
--- ctf_ prefix, or as the one map it is a prefix of. The pool is the bot's, so only a
--- map that is there is ever loaded: the server stops on a map it can't load.
-local function resolve_map(name)
-    local pool = state and state.pool or {}
-    local want = name:lower():gsub("^%s+", ""):gsub("%s+$", "")
-    if want == "" then return nil end
-    local bare = want:gsub("^ctf_", "")
-    local prefixed = {}
-    for _, m in ipairs(pool) do
-        local low = m:lower()
-        local lowbare = low:gsub("^ctf_", "")
-        if low == want or lowbare == bare then return m end
-        if lowbare:sub(1, #bare) == bare then prefixed[#prefixed + 1] = m end
-    end
-    if #prefixed == 1 then return prefixed[1] end
-    return nil
-end
-
-local function cmd_map(slot, name)
-    if in_series() then
-        server.say_to(slot, "A gather is on; its maps are set. !r replays the current one.", color)
-        return
-    end
-    if not state then
-        server.say_to(slot, "The gather bot is not reachable, so no map list to check against.", color)
-        return
-    end
-    local map = resolve_map(name or "")
-    if not map then
-        server.say_to(slot, "No CTF map called '" .. (name or "") .. "' in the pool.", color)
-        return
-    end
-    server.say(("%s changes the map to %s"):format(who(slot), map), color)
-    server.next_map(map)
-end
-
-local function cmd_pause(slot)
-    countdown = nil
-    if server.pause() then server.say(("Game paused by %s. !up to go on."):format(who(slot)), color)
-    else server.say_to(slot, "The game is already paused.", color) end
-end
-
-local function cmd_unpause(slot)
-    if not server.paused() then
-        server.say_to(slot, "The game is not paused.", color)
-        return
-    end
-    if countdown then return end
-    countdown = 3 * 60
-    server.say("3", color)
-end
-
-local function cmd_restart(slot)
-    if restarting then return end
-    if in_series() and not series.playing then
-        server.say_to(slot, "Wait for the gather's map to load.", color)
-        return
-    end
-    restarting = true
-    server.say(("%s restarts the round on %s"):format(who(slot), server.map()), color)
-    server.next_map(server.map())
-end
-
-local function cmd_status(slot)
-    local lines = {}
-    if not state then
-        lines[#lines + 1] = "The gather bot is unreachable; no gather can start."
-    elseif state.phase == "idle" then
-        lines[#lines + 1] = ("Gather #%d: nobody playing yet; !beta_add in Discord to queue."):format(state.gather_id)
-    else
-        lines[#lines + 1] = ("Gather #%d: %s"):format(state.gather_id,
-            state.phase == "picking" and "the teams are picking their maps in Discord" or "live")
-        if state.teams then
-            lines[#lines + 1] = ("Alpha: %s | Bravo: %s"):format(
-                table.concat(state.teams.alpha or {}, ", "), table.concat(state.teams.bravo or {}, ", "))
-        end
-        if state.maps and #state.maps > 0 then
-            lines[#lines + 1] = ("Maps: %s, %s, then %s if 1-1"):format(state.maps[1], state.maps[2], state.maps[3] or "?")
-        end
-    end
-    if in_series() then
-        lines[#lines + 1] = ("Series: alpha %d - %d bravo, map %d of %d%s"):format(
-            series.wins.alpha, series.wins.bravo, series.index, #series.maps,
-            series.playing and "" or " (loading)")
-    end
-    local s, left = server.scores(), math.floor(server.time_left())
-    lines[#lines + 1] = ("Now on %s: alpha %d - %d bravo, %d:%02d left%s"):format(
-        server.map(), s.alpha, s.bravo, left // 60, left % 60, server.paused() and ", paused" or "")
-    for _, line in ipairs(lines) do server.say_to(slot, line, color) end
-end
-
 function on_chat(slot, text, team)
     local lower = text:lower()
     if in_series() and lower:match("^/votemap") then
@@ -264,9 +302,10 @@ function on_chat(slot, text, team)
         return true
     end
     if cmd == "map" then cmd_map(slot, arg)
+    elseif cmd == "tb" or cmd == "tiebreaker" then cmd_tiebreaker(slot)
+    elseif cmd == "r" or cmd == "restart" then cmd_restart(slot)
     elseif cmd == "p" or cmd == "pause" then cmd_pause(slot)
     elseif cmd == "up" or cmd == "unpause" then cmd_unpause(slot)
-    elseif cmd == "r" or cmd == "restart" then cmd_restart(slot)
     else return end
     return true
 end
@@ -308,29 +347,19 @@ function on_tick(tick)
     end
 end
 
-function on_match_end(winner)
-    if not series.playing then return end
-    if restarting then return end -- !r: the round is replayed, not counted
-    series.ended = series.index
-    if winner == "alpha" or winner == "bravo" then series.wins[winner] = series.wins[winner] + 1 end
-    local nxt
-    if series.index == 1 then nxt = 2
-    elseif series.index == 2 and series.wins.alpha == series.wins.bravo then nxt = 3 end
-    if nxt and series.maps[nxt] then
-        series.index = nxt
-        server.next_map(series.maps[nxt])
-    else
-        series.done = true
-    end
-end
-
+-- A counted round's end: it counts unless !r or !map cut it short.
 function on_round_end(stats)
-    if restarting then
-        series.playing = false
+    if not series.counting then return end
+    series.counting = false
+    if series.cut then
+        series.cut = false
         return
     end
-    if not series.playing then return end
-    series.playing = false
+    series.played = series.played + 1
+    if stats.winner == "alpha" or stats.winner == "bravo" then
+        series.wins[stats.winner] = series.wins[stats.winner] + 1
+    end
+    series.done = series.played >= 3 or (series.played == 2 and not tied())
     local players = {}
     for _, p in ipairs(stats.players) do
         if not p.bot and not p.spectator then
@@ -339,37 +368,31 @@ function on_round_end(stats)
         end
     end
     post("/api/round", {
-        gather_id = series.id, map_index = series.ended, map = stats.map, why = stats.why,
+        gather_id = series.id, map_index = series.played, map = stats.map, why = stats.why,
         scores = stats.scores, winner = stats.winner, players = json.array(players), done = series.done,
     })
+    local next_step
     if series.done then
-        server.say(("Gather #%d is over: alpha %d - %d bravo. The password has changed; see Discord for the next one."):format(
-            series.id, series.wins.alpha, series.wins.bravo), color)
+        next_step = "The series is over; the password has changed, see Discord for the next one."
+    elseif series.played == 2 then
+        next_step = ("1-1: say !tb for the tiebreaker, %s."):format(tostring(series.tiebreaker))
+    else
+        next_step = "Say !map <map> for map 2."
     end
+    server.say(("Map %d of 3 over on %s: alpha %d - %d bravo. Series alpha %d - %d bravo. %s"):format(
+        series.played, stats.map, stats.scores.alpha, stats.scores.bravo, series.wins.alpha, series.wins.bravo, next_step), color)
 end
 
+-- The next round: the one asked for counts; any other (the rotation's) is warm-up.
 function on_round_start(map)
     countdown = nil
-    local restarted = restarting
-    restarting = false
-    if not series.id or series.done then return end
-    local wanted = series.maps[series.index]
-    if map == wanted then
-        series.playing = true
-        series.retries = 0
-        server.say(("Gather #%d, map %d of %d: %s%s"):format(series.id, series.index, #series.maps, map,
-            restarted and " (restarted)" or ""), color)
-        return
+    if in_series() and series.wanted and map == series.wanted then
+        series.wanted = nil
+        series.counting = true
+        server.say(("Gather #%d, map %d of 3: %s. This one counts."):format(series.id, series.played + 1, map), color)
+    else
+        series.counting = false
     end
-    -- The rotation got there first (a round ended by `nextmap` or a vote is settled
-    -- before the script hears of it): switch to the gather's map now.
-    series.retries = (series.retries or 0) + 1
-    if series.retries > 3 then
-        abort_series("could not switch to " .. wanted .. "; is the map there?")
-        return
-    end
-    server.print(("gather: wanted %s, got %s; switching"):format(wanted, map))
-    server.next_map(wanted)
 end
 
 server.print(("gather: script loaded, polling %s as %s"):format(bot_url, server_name ~= "" and server_name or "the only server"))

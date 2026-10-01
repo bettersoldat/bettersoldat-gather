@@ -1,7 +1,7 @@
 // gatherbot: a Discord gather bot for bettersoldat. It queues players in a channel,
-// makes two teams when enough have joined, DMs them the server and its password, has
-// each team pick a map (and picks the tiebreaker itself), and shows each round's end as
-// the server's script reports it. See README.md.
+// makes two teams when enough have joined, DMs them the server and its password, draws
+// the tiebreaker, and shows each map's end as the server's script reports it; the maps
+// themselves are picked in the game. See README.md.
 package main
 
 import (
@@ -31,12 +31,11 @@ func main() {
 		servers = append(servers, service.ServerConfig{Name: s.Name, Addr: s.Addr})
 	}
 	svc := service.New(service.Config{
-		Servers:     servers,
-		TeamSize:    cfg.TeamSize,
-		Pool:        cfg.Maps,
-		PickTimeout: cfg.PickTimeout,
-		Prefix:      cfg.Prefix,
-		Grace:       cfg.Grace,
+		Servers:  servers,
+		TeamSize: cfg.TeamSize,
+		Pool:     cfg.Maps,
+		Prefix:   cfg.Prefix,
+		Grace:    cfg.Grace,
 	}, nil)
 
 	bot, err := discord.New(cfg.Token, cfg.ChannelID, cfg.Prefix, svc)

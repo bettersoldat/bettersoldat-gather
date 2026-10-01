@@ -10,7 +10,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // Server is one game server: the name its script says, and the host:port the players
@@ -22,16 +21,15 @@ type Server struct {
 
 // Config is everything the bot is told.
 type Config struct {
-	Token       string        // GATHER_DISCORD_TOKEN
-	ChannelID   string        // GATHER_CHANNEL_ID: the one channel the bot listens and talks in
-	Servers     []Server      // GATHER_SERVERS: "name=host:port name=host:port"; or GATHER_SERVER_ADDR for one, named "main"
-	Listen      string        // GATHER_LISTEN: the API's address, ":8080" by default
-	Secret      string        // GATHER_SECRET: shared with the server's script
-	Prefix      string        // GATHER_PREFIX: "!beta_" by default
-	Maps        []string      // GATHER_MAPS: the pool, space-separated; the CTF maps by default
-	TeamSize    int           // GATHER_TEAM_SIZE: 3 by default
-	PickTimeout time.Duration // GATHER_PICK_TIMEOUT: seconds, 90 by default
-	Grace       int           // GATHER_GRACE: seconds to say /pw, 30 by default; must match the script's
+	Token     string   // GATHER_DISCORD_TOKEN
+	ChannelID string   // GATHER_CHANNEL_ID: the one channel the bot listens and talks in
+	Servers   []Server // GATHER_SERVERS: "name=host:port name=host:port"; or GATHER_SERVER_ADDR for one, named "main"
+	Listen    string   // GATHER_LISTEN: the API's address, ":8080" by default
+	Secret    string   // GATHER_SECRET: shared with the server's script
+	Prefix    string   // GATHER_PREFIX: "!beta_" by default
+	Maps      []string // GATHER_MAPS: the pool, space-separated; the CTF maps by default
+	TeamSize  int      // GATHER_TEAM_SIZE: 3 by default
+	Grace     int      // GATHER_GRACE: seconds to say /pw, 30 by default; must match the script's
 }
 
 // DefaultMaps is bettersoldat's CTF maps (assets/maps/ctf_*.pms).
@@ -73,11 +71,6 @@ func Load() (Config, error) {
 	if c.TeamSize, err = intenv("GATHER_TEAM_SIZE", 3); err != nil {
 		errs = append(errs, err)
 	}
-	seconds, err := intenv("GATHER_PICK_TIMEOUT", 90)
-	if err != nil {
-		errs = append(errs, err)
-	}
-	c.PickTimeout = time.Duration(seconds) * time.Second
 	if c.Grace, err = intenv("GATHER_GRACE", 30); err != nil {
 		errs = append(errs, err)
 	}

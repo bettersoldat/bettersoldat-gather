@@ -1,5 +1,6 @@
-// Package gather holds the state of one gather on one server: the teams, the map
-// picks, the passwords and the series of rounds. It knows nothing of Discord, of the
+// Package gather holds the state of one gather on one server: the teams, the
+// passwords, the tiebreaker and the series of rounds. The maps are picked in the game
+// (the script's !map), so none of that is here. It knows nothing of Discord, of the
 // queue or of the game server; the service around it turns its changes into messages.
 package gather
 
@@ -20,9 +21,7 @@ type Phase int
 const (
 	// Idle: nothing is on; the server is locked and waits for the next gather.
 	Idle Phase = iota
-	// Picking: the teams are made and each picks its map.
-	Picking
-	// Live: the maps are settled and the server plays them.
+	// Live: the teams are made and the server plays their maps.
 	Live
 )
 
@@ -30,8 +29,6 @@ func (p Phase) String() string {
 	switch p {
 	case Idle:
 		return "idle"
-	case Picking:
-		return "picking"
 	case Live:
 		return "live"
 	}
@@ -68,10 +65,10 @@ type PlayerStats struct {
 	Ping   int    `json:"ping"`
 }
 
-// RoundReport is a round's end, as the script posts it.
+// RoundReport is a counted round's end, as the script posts it.
 type RoundReport struct {
 	GatherID int           `json:"gather_id"`
-	MapIndex int           `json:"map_index"` // 1-based, into Maps()
+	MapIndex int           `json:"map_index"` // 1, 2 or 3: the tiebreaker
 	Map      string        `json:"map"`
 	Why      string        `json:"why"` // "limit", "nextmap" or "vote"
 	Scores   Scores        `json:"scores"`
@@ -91,14 +88,13 @@ type Gather struct {
 	ID       int // the gather's number; 0 before the first, and the last one's while idle
 	Phase    Phase
 	TeamSize int
-	Pool     []string // the maps a team may pick
+	Pool     []string // the maps !map takes, and the tiebreaker is drawn from
 
 	Teams        [2][]Player // once started
-	Picks        [2]string   // each team's map, "" until picked
-	Tiebreaker   string      // chosen as the gather goes live
+	Tiebreaker   string      // drawn as the gather starts; played at 1-1 with !tb
 	Password     string      // the server's password for the players
 	SpecPassword string      // and for spectators
-	PickDeadline time.Time
+	Started      time.Time
 
 	Results []RoundReport
 	Wins    [2]int
@@ -108,11 +104,9 @@ type Gather struct {
 
 // Errors the commands answer with.
 var (
-	ErrNotPicking = errors.New("there is no map to pick right now")
 	ErrNotInTeam  = errors.New("you are not in this gather")
 	ErrNotLive    = errors.New("no gather is live")
 	ErrWrongID    = errors.New("the report is for another gather")
-	ErrNoSuchMap  = errors.New("no such map in the pool")
 	ErrNotIdle    = errors.New("a gather is already on")
 	ErrWrongCount = errors.New("not the number of players a gather takes")
 )
@@ -133,8 +127,8 @@ func New(teamSize int, pool []string, rng *mrand.Rand) *Gather {
 func (g *Gather) Size() int { return 2 * g.TeamSize }
 
 // Start begins gather id with these players: shuffled into two teams, new passwords,
-// and the picking begun with pickTimeout to go.
-func (g *Gather) Start(id int, players []Player, pickTimeout time.Duration) error {
+// the tiebreaker drawn, and live from now.
+func (g *Gather) Start(id int, players []Player) error {
 	if g.Phase != Idle {
 		return ErrNotIdle
 	}
@@ -146,14 +140,13 @@ func (g *Gather) Start(id int, players []Player, pickTimeout time.Duration) erro
 	g.ID = id
 	g.Teams[Alpha] = players[:g.TeamSize]
 	g.Teams[Bravo] = players[g.TeamSize:]
-	g.Picks = [2]string{}
-	g.Tiebreaker = ""
+	g.Tiebreaker = g.randomMap()
 	g.Results = nil
 	g.Wins = [2]int{}
 	g.Password = NewPassword()
 	g.SpecPassword = NewPassword()
-	g.PickDeadline = time.Now().Add(pickTimeout)
-	g.Phase = Picking
+	g.Started = time.Now()
+	g.Phase = Live
 	return nil
 }
 
@@ -174,114 +167,17 @@ func (g *Gather) Members() []Player {
 	return append(append([]Player(nil), g.Teams[Alpha]...), g.Teams[Bravo]...)
 }
 
-// ResolveMap finds name in the pool: exact, case-insensitive, with or without the
-// "ctf_" prefix, or as a unique prefix of a map's name.
-func (g *Gather) ResolveMap(name string) (string, bool) {
-	want := strings.ToLower(strings.TrimSpace(name))
-	if want == "" {
-		return "", false
-	}
-	bare := strings.TrimPrefix(want, "ctf_")
-	var prefixed []string
-	for _, m := range g.Pool {
-		low := strings.ToLower(m)
-		if low == want || strings.TrimPrefix(low, "ctf_") == bare {
-			return m, true
-		}
-		if strings.HasPrefix(strings.TrimPrefix(low, "ctf_"), bare) {
-			prefixed = append(prefixed, m)
-		}
-	}
-	if len(prefixed) == 1 {
-		return prefixed[0], true
-	}
-	return "", false
-}
-
-// Pick records p's team's map. ready is true once both teams have picked: the gather
-// is then live, its tiebreaker chosen. A team may change its pick until then.
-func (g *Gather) Pick(p Player, name string) (team int, picked string, ready bool, err error) {
-	if g.Phase != Picking {
-		return -1, "", false, ErrNotPicking
-	}
-	team = g.TeamOf(p)
-	if team < 0 {
-		return -1, "", false, ErrNotInTeam
-	}
-	picked, ok := g.ResolveMap(name)
-	if !ok {
-		return team, "", false, ErrNoSuchMap
-	}
-	g.Picks[team] = picked
-	if g.Picks[Alpha] != "" && g.Picks[Bravo] != "" {
-		g.goLive()
-		return team, picked, true, nil
-	}
-	return team, picked, false, nil
-}
-
-// PickTimeout picks at random for any team that hasn't, and goes live. It answers
-// which teams were picked for. Nothing happens unless the gather is picking.
-func (g *Gather) PickTimeout() (forced map[int]string, ready bool) {
-	if g.Phase != Picking {
-		return nil, false
-	}
-	forced = map[int]string{}
-	for t := range g.Picks {
-		if g.Picks[t] == "" {
-			g.Picks[t] = g.randomMap(g.Picks[Alpha], g.Picks[Bravo])
-			forced[t] = g.Picks[t]
-		}
-	}
-	g.goLive()
-	return forced, true
-}
-
-// goLive: the tiebreaker chosen apart from the picks, and the phase set.
-func (g *Gather) goLive() {
-	g.Tiebreaker = g.randomMap(g.Picks[Alpha], g.Picks[Bravo])
-	g.Phase = Live
-}
-
-// randomMap is a map of the pool that is none of `not` (falling back to any of the pool
-// when it is too small, and to the first pick when the pool is empty).
-func (g *Gather) randomMap(not ...string) string {
-	var choices []string
-	for _, m := range g.Pool {
-		excluded := false
-		for _, n := range not {
-			if strings.EqualFold(m, n) {
-				excluded = true
-			}
-		}
-		if !excluded {
-			choices = append(choices, m)
-		}
-	}
-	if len(choices) == 0 {
-		choices = g.Pool
-	}
-	if len(choices) == 0 {
-		for _, n := range not {
-			if n != "" {
-				return n
-			}
-		}
+// randomMap is a map of the pool, or "" with no pool.
+func (g *Gather) randomMap() string {
+	if len(g.Pool) == 0 {
 		return ""
 	}
-	return choices[g.rng.Intn(len(choices))]
+	return g.Pool[g.rng.Intn(len(g.Pool))]
 }
 
-// Maps is the series in order: alpha's pick, bravo's, the tiebreaker. Empty until live.
-func (g *Gather) Maps() []string {
-	if g.Phase != Live {
-		return nil
-	}
-	return []string{g.Picks[Alpha], g.Picks[Bravo], g.Tiebreaker}
-}
-
-// RoundEnd records a round of the live gather. done is true when the series is over:
-// after the third map, after the second with a team ahead, or on the script's word.
+// RoundEnd records a counted round of the live gather. done is true when the series
+// is over: after the third map, after the second with a team ahead, or on the
+// script's word.
 func (g *Gather) RoundEnd(r RoundReport) (done bool, err error) {
 	if g.Phase != Live {
 		return false, ErrNotLive
@@ -321,11 +217,10 @@ func (g *Gather) SeriesWinner() int {
 func (g *Gather) Reset() {
 	g.Phase = Idle
 	g.Teams = [2][]Player{}
-	g.Picks = [2]string{}
 	g.Tiebreaker = ""
 	g.Results = nil
 	g.Wins = [2]int{}
-	g.PickDeadline = time.Time{}
+	g.Started = time.Time{}
 	g.Password = NewPassword()
 	g.SpecPassword = NewPassword()
 }

@@ -33,21 +33,19 @@ type ServerConfig struct {
 
 // Config is what the service needs to know.
 type Config struct {
-	Servers     []ServerConfig
-	TeamSize    int           // 3 for 3v3
-	Pool        []string      // the maps a team may pick
-	PickTimeout time.Duration // how long the teams have to pick before the bot picks for them
-	Prefix      string        // the command prefix, for the help and the hints
-	Grace       int           // seconds a player has to say /pw before the server kicks; the script's own setting, told to players
+	Servers  []ServerConfig
+	TeamSize int      // 3 for 3v3
+	Pool     []string // the maps !map takes in the game, and the tiebreaker is drawn from
+	Prefix   string   // the command prefix, for the help and the hints
+	Grace    int      // seconds a player has to say /pw before the server kicks; the script's own setting, told to players
 }
 
 // server is one game server and the gather on it.
 type server struct {
-	name      string
-	addr      string
-	g         *gather.Gather
-	onServer  map[int]string // slot -> name, from the script's join and leave events
-	pickTimer *time.Timer
+	name     string
+	addr     string
+	g        *gather.Gather
+	onServer map[int]string // slot -> name, from the script's join and leave events
 }
 
 // Service is the queue, the servers and everything around them.
@@ -73,9 +71,6 @@ var (
 func New(cfg Config, n Notifier) *Service {
 	if cfg.TeamSize <= 0 {
 		cfg.TeamSize = 3
-	}
-	if cfg.PickTimeout <= 0 {
-		cfg.PickTimeout = 90 * time.Second
 	}
 	if cfg.Prefix == "" {
 		cfg.Prefix = "!beta_"
@@ -201,7 +196,7 @@ func (s *Service) Add(p gather.Player) string {
 		return "added: the queue is full, waiting for a free server."
 	}
 	s.start(srv)
-	return fmt.Sprintf("added: %s is full!", strings.ToLower(s.title(srv)))
+	return fmt.Sprintf("added: %s is on!", strings.ToLower(s.title(srv)))
 }
 
 // Del takes p out of the queue.
@@ -246,25 +241,15 @@ func (s *Service) serverStatus(b *strings.Builder, srv *server) {
 	switch g.Phase {
 	case gather.Idle:
 		fmt.Fprintf(b, "%s — free", head)
-	case gather.Picking:
-		fmt.Fprintf(b, "%s — gather #%d, picking maps", head, g.ID)
-		if left := time.Until(g.PickDeadline).Round(time.Second); left > 0 {
-			fmt.Fprintf(b, " (%s left)", left)
-		}
-		for t := range g.Teams {
-			pick := "not picked yet"
-			if g.Picks[t] != "" {
-				pick = g.Picks[t]
-			}
-			fmt.Fprintf(b, "\n%s: %s — %s", teamTitle(t), gather.Names(g.Teams[t]), pick)
-		}
-		fmt.Fprintf(b, "\nPick with `%s <map>`; `%s` lists them.", s.cmd("pick"), s.cmd("maps"))
 	case gather.Live:
-		fmt.Fprintf(b, "%s — gather #%d, live", head, g.ID)
+		fmt.Fprintf(b, "%s — gather #%d, live for %s", head, g.ID, time.Since(g.Started).Round(time.Minute))
 		for t := range g.Teams {
 			fmt.Fprintf(b, "\n%s: %s", teamTitle(t), gather.Names(g.Teams[t]))
 		}
-		fmt.Fprintf(b, "\n%s\nSeries: Alpha %d - %d Bravo (%d of %d maps played)", mapsLine(g), g.Wins[gather.Alpha], g.Wins[gather.Bravo], len(g.Results), len(g.Maps()))
+		fmt.Fprintf(b, "\nSeries: Alpha %d - %d Bravo, %d of 3 maps played; tiebreaker %s", g.Wins[gather.Alpha], g.Wins[gather.Bravo], len(g.Results), g.Tiebreaker)
+		for _, r := range g.Results {
+			fmt.Fprintf(b, "\n  %d. %s %d - %d", r.MapIndex, r.Map, r.Scores.Alpha, r.Scores.Bravo)
+		}
 	}
 	if names := onServerNames(srv); len(names) > 0 {
 		fmt.Fprintf(b, "\nOn the server now: %s", strings.Join(names, ", "))
@@ -315,38 +300,11 @@ func (s *Service) Info(p gather.Player) string {
 	return "check your DMs."
 }
 
-// Pick records p's team's map.
-func (s *Service) Pick(p gather.Player, name string) string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if strings.TrimSpace(name) == "" {
-		return fmt.Sprintf("which map? `%s <map>`; `%s` lists them.", s.cmd("pick"), s.cmd("maps"))
-	}
-	srv := s.serverOf(p)
-	if srv == nil {
-		return gather.ErrNotInTeam.Error()
-	}
-	team, picked, ready, err := srv.g.Pick(p, name)
-	if err != nil {
-		if errors.Is(err, gather.ErrNoSuchMap) {
-			return fmt.Sprintf("no map called %q in the pool; `%s` lists them.", name, s.cmd("maps"))
-		}
-		return err.Error()
-	}
-	if ready {
-		s.stopPickTimer(srv)
-		s.announce(fmt.Sprintf("%s: %s picks **%s**.", s.title(srv), teamTitle(team), picked))
-		s.live(srv)
-		return "picked."
-	}
-	return fmt.Sprintf("%s picks **%s**. Waiting for %s.", teamTitle(team), picked, teamTitle(1-team))
-}
-
 // Maps lists the pool.
 func (s *Service) Maps() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return "Map pool: " + strings.Join(s.servers[0].g.SortedPool(), ", ")
+	return "Map pool (`!map <name>` in the game): " + strings.Join(s.servers[0].g.SortedPool(), ", ")
 }
 
 // Abort ends a gather: p's own, or the one on server name. admin says whether p may
@@ -382,7 +340,6 @@ func (s *Service) Abort(p gather.Player, admin bool, name string) string {
 		return "nothing to abort."
 	}
 	title := s.title(srv)
-	s.stopPickTimer(srv)
 	srv.g.Reset()
 	s.announce(fmt.Sprintf("%s aborted by %s. The server's password has been changed; `%s` to queue.", title, p.Name, s.cmd("add")))
 	s.startWaiting(srv)
@@ -393,10 +350,9 @@ func (s *Service) Abort(p gather.Player, admin bool, name string) string {
 func (s *Service) Help() string {
 	c := s.cmd
 	lines := []string{
-		fmt.Sprintf("`%s` — join the queue (%dv%d CTF)", c("add"), s.cfg.TeamSize, s.cfg.TeamSize),
+		fmt.Sprintf("`%s` — join the queue (%dv%d CTF, best of three)", c("add"), s.cfg.TeamSize, s.cfg.TeamSize),
 		fmt.Sprintf("`%s` — leave the queue", c("del")),
 		fmt.Sprintf("`%s` — the queue and every server", c("status")),
-		fmt.Sprintf("`%s <map>` — your team's map, once your gather is full", c("pick")),
 		fmt.Sprintf("`%s` — the map pool", c("maps")),
 		fmt.Sprintf("`%s` — get your server info again", c("info")),
 	}
@@ -409,6 +365,7 @@ func (s *Service) Help() string {
 			fmt.Sprintf("`%s [server]` — get the server info to spectate (servers: %s)", c("spec"), s.serverNames()),
 			fmt.Sprintf("`%s [server]` — abort a running gather", c("abort")))
 	}
+	lines = append(lines, "In the game: `!map <map>` starts a map, `!r` replays it, `!tb` plays the tiebreaker at 1-1, `!p` and `!up` pause and resume, `!status` tells the score.")
 	return strings.Join(lines, "\n")
 }
 
@@ -429,12 +386,9 @@ func (s *Service) State(name string) (api.State, error) {
 		Phase:        g.Phase.String(),
 		Password:     g.Password,
 		SpecPassword: g.SpecPassword,
-		Maps:         g.Maps(),
+		Tiebreaker:   g.Tiebreaker,
 		Pool:         g.SortedPool(),
 		Teams:        map[string][]string{},
-	}
-	if st.Maps == nil {
-		st.Maps = []string{}
 	}
 	for t := range g.Teams {
 		names := []string{}
@@ -458,8 +412,8 @@ func (s *Service) apiServer(name string) (*server, error) {
 	return nil, fmt.Errorf("%w %q", ErrNoServer, name)
 }
 
-// RoundEnd takes a round's report from server name: it is told in the channel, and
-// the series ended when it is over.
+// RoundEnd takes a counted round's report from server name: it is told in the
+// channel, and the series ended when it is over.
 func (s *Service) RoundEnd(name string, r gather.RoundReport) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -500,7 +454,7 @@ func (s *Service) ServerEvent(name string, ev api.Event) {
 func (s *Service) start(srv *server) {
 	players := s.queue[:s.size()]
 	s.queue = append([]gather.Player(nil), s.queue[s.size():]...)
-	if err := srv.g.Start(s.nextID, players, s.cfg.PickTimeout); err != nil {
+	if err := srv.g.Start(s.nextID, players); err != nil {
 		log.Printf("service: starting gather #%d on %s: %v", s.nextID, srv.name, err)
 		return
 	}
@@ -516,8 +470,8 @@ func (s *Service) startWaiting(srv *server) {
 	}
 }
 
-// started: the gather just began. Everyone is DMed the server, the teams are told,
-// and the picking clock runs.
+// started: the gather just began. Everyone is DMed the server, and the teams are
+// told how it goes from here.
 func (s *Service) started(srv *server) {
 	g := srv.g
 	var failed []string
@@ -532,59 +486,20 @@ func (s *Service) started(srv *server) {
 			}
 		}
 	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "**%s is full!**\n", s.title(srv))
-	for t := range g.Teams {
-		fmt.Fprintf(&b, "%s: %s\n", teamTitle(t), gather.Names(g.Teams[t]))
-	}
-	fmt.Fprintf(&b, "The server info has been DMed to everyone. Each team picks a map with `%s <map>` within %s (`%s` lists them); the bot picks the tiebreaker.",
-		s.cmd("pick"), s.cfg.PickTimeout, s.cmd("maps"))
-	if len(failed) > 0 {
-		fmt.Fprintf(&b, "\nI couldn't DM %s: open your DMs and use `%s`.", strings.Join(failed, ", "), s.cmd("info"))
-	}
-	s.announce(b.String())
-
-	id := g.ID
-	srv.pickTimer = time.AfterFunc(s.cfg.PickTimeout, func() { s.pickTimedOut(srv, id) })
-}
-
-func (s *Service) stopPickTimer(srv *server) {
-	if srv.pickTimer != nil {
-		srv.pickTimer.Stop()
-		srv.pickTimer = nil
-	}
-}
-
-// pickTimedOut: the clock ran out on gather id's picking on srv.
-func (s *Service) pickTimedOut(srv *server, id int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if srv.g.ID != id || srv.g.Phase != gather.Picking {
-		return
-	}
-	forced, ready := srv.g.PickTimeout()
-	if !ready {
-		return
-	}
-	teams := make([]int, 0, len(forced))
-	for t := range forced {
-		teams = append(teams, t)
-	}
-	sort.Ints(teams)
-	for _, t := range teams {
-		s.announce(fmt.Sprintf("%s: time's up, %s gets **%s**.", s.title(srv), teamTitle(t), forced[t]))
-	}
-	s.live(srv)
-}
-
-// live: the maps are settled; the script picks them up on its next poll.
-func (s *Service) live(srv *server) {
 	spec := s.cmd("spec")
 	if len(s.servers) > 1 {
 		spec += " " + srv.name
 	}
-	s.announce(fmt.Sprintf("**%s is live!**\n%s\nServer: `%s` — say `/pw <your password>` in the chat once you join (it is in your DMs; `%s` sends it again). Watch with `%s`.",
-		s.title(srv), mapsLine(srv.g), srv.addr, s.cmd("info"), spec))
+	var b strings.Builder
+	fmt.Fprintf(&b, "**%s is on!**\n", s.title(srv))
+	for t := range g.Teams {
+		fmt.Fprintf(&b, "%s: %s\n", teamTitle(t), gather.Names(g.Teams[t]))
+	}
+	fmt.Fprintf(&b, "Server: `%s` — the password is in your DMs (`%s` sends it again). %s\nWatch with `%s`.", srv.addr, s.cmd("info"), s.inGame(g), spec)
+	if len(failed) > 0 {
+		fmt.Fprintf(&b, "\nI couldn't DM %s: open your DMs and use `%s`.", strings.Join(failed, ", "), s.cmd("info"))
+	}
+	s.announce(b.String())
 }
 
 // finish: the series on srv is over. The passwords change, so the server is locked,
@@ -599,7 +514,6 @@ func (s *Service) finish(srv *server) {
 	default:
 		result = fmt.Sprintf("**%s wins** %d - %d", teamTitle(w), g.Wins[w], g.Wins[1-w])
 	}
-	s.stopPickTimer(srv)
 	g.Reset()
 	s.announce(fmt.Sprintf("**%s is over:** %s. The server's password has been changed. `%s` to queue for the next one.", title, result, s.cmd("add")))
 	s.startWaiting(srv)
@@ -614,6 +528,12 @@ func teamTitle(t int) string {
 	return "Bravo"
 }
 
+// inGame says how the maps go, once on the server.
+func (s *Service) inGame(g *gather.Gather) string {
+	return fmt.Sprintf("Each team starts its map in the game with `!map <map>` (`%s` lists them); a map counts once it runs to its end, `!r` replays it, and at 1-1 `!tb` plays the tiebreaker, **%s**.",
+		s.cmd("maps"), g.Tiebreaker)
+}
+
 // playerDM is what a player of team t on srv is sent as the gather begins.
 func (s *Service) playerDM(srv *server, t int) string {
 	g := srv.g
@@ -622,28 +542,15 @@ func (s *Service) playerDM(srv *server, t int) string {
 	fmt.Fprintf(&b, "Server: `%s`\nPassword: `%s`\n", srv.addr, g.Password)
 	fmt.Fprintf(&b, "Join the server, then say `/pw %s` in the chat (T) within %d seconds, or it kicks you. Then join team %s from the team menu (M).\n",
 		g.Password, s.cfg.Grace, teamTitle(t))
-	if g.Phase == gather.Picking {
-		fmt.Fprintf(&b, "Your team picks its map in the channel: `%s <map>`.", s.cmd("pick"))
-	} else {
-		b.WriteString(mapsLine(g))
-	}
+	b.WriteString(s.inGame(g))
 	return b.String()
 }
 
-// mapsLine lists the series' maps, once live.
-func mapsLine(g *gather.Gather) string {
-	maps := g.Maps()
-	if maps == nil {
-		return "Maps: not picked yet."
-	}
-	return fmt.Sprintf("Maps: 1. **%s** (Alpha's pick) 2. **%s** (Bravo's pick) 3. **%s** (tiebreaker, if needed)", maps[0], maps[1], maps[2])
-}
-
-// roundText tells a round's end: the score, the series, and everyone's line.
+// roundText tells a counted round's end: the score, the series, and everyone's line.
 func (s *Service) roundText(srv *server, r gather.RoundReport) string {
 	g := srv.g
 	var b strings.Builder
-	fmt.Fprintf(&b, "**%s, map %d/%d — %s:** Alpha %d - %d Bravo", s.title(srv), r.MapIndex, len(g.Maps()), r.Map, r.Scores.Alpha, r.Scores.Bravo)
+	fmt.Fprintf(&b, "**%s, map %d/3 — %s:** Alpha %d - %d Bravo", s.title(srv), r.MapIndex, r.Map, r.Scores.Alpha, r.Scores.Bravo)
 	switch r.Winner {
 	case "alpha", "bravo":
 		fmt.Fprintf(&b, " — %s wins the map", teamTitle(teamIndex(r.Winner)))

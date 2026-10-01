@@ -1,27 +1,28 @@
 # gatherbot
 
 The Discord half: one bot, in one channel, running gathers on one or more bettersoldat
-servers. 3v3 CTF, best of three: each team picks a map, the bot picks the tiebreaker,
-and the server plays it only when the first two are split 1-1. Nothing is ranked or
-persisted; restarting the bot empties the queue.
+servers. 3v3 CTF, best of three: the teams start their maps in the game, the bot draws
+the tiebreaker, and it is played only when the first two are split 1-1. Nothing is
+ranked or persisted; restarting the bot empties the queue.
 
 ## How a gather goes
 
 1. Players `!beta_add` in the gather channel. `!beta_del` leaves, `!beta_status` shows
    the queue and every server.
 2. At six, the bot takes the first free server, shuffles the six into **Alpha** and
-   **Bravo**, makes a password for the players and another for spectators, and DMs each
-   player the server's address, their password and their team. With every server busy
-   the six wait, and start on the first server that frees up.
-3. Each team has 90 seconds to `!beta_pick <map>` (`!beta_maps` lists the pool; a team
-   may change its pick until time is up). The bot picks for a team that doesn't, and
-   draws the tiebreaker from the rest of the pool.
-4. The gather is live. That server's script sees it on its next poll, plays Alpha's
-   map, then Bravo's, then the tiebreaker if it is 1-1, and posts each round's end: the
-   bot shows the score, the series and everyone's kills, deaths, caps and ping.
-5. When the series is over the bot changes both passwords again, so the server is
-   locked, and the queue goes on. `!beta_abort` does the same at any point (a player
-   of the gather ends their own; anyone with Manage Server ends any, by server name).
+   **Bravo**, makes a password for the players and another for spectators, draws the
+   tiebreaker from the pool, and DMs each player the server's address, their password
+   and their team. With every server busy the six wait, and start on the first server
+   that frees up.
+3. In the game, `!map <map>` starts a map (`!beta_maps` lists the pool). A map counts
+   once it runs to its end; `!r` replays it from the start and `!map` another cuts it
+   short, and neither counts. At 1-1, `!tb` plays the tiebreaker. The server's script
+   posts each counted map's end, and the bot shows the score, the series and
+   everyone's kills, deaths, caps and ping.
+4. After two maps with a team ahead, or after the third, the bot changes both
+   passwords again, so the server is locked, and the queue goes on. `!beta_abort` does
+   the same at any point (a player of the gather ends their own; anyone with Manage
+   Server ends any, by server name).
 
 `!beta_spec [server]` DMs a server's address and its spectators' password. `!beta_info`
 sends a player their DM again. `!beta_help` lists the commands.
@@ -54,9 +55,8 @@ The server has no password of its own: the script on it keeps the door, and
 | `GATHER_SECRET` | shared with every server's script; sent as a bearer token | required |
 | `GATHER_LISTEN` | where the HTTP API listens | `:8080` |
 | `GATHER_PREFIX` | the command prefix | `!beta_` |
-| `GATHER_MAPS` | the map pool, space-separated | bettersoldat's CTF maps |
+| `GATHER_MAPS` | the map pool `!map` takes and the tiebreaker is drawn from, space-separated | bettersoldat's CTF maps |
 | `GATHER_TEAM_SIZE` | players a side | `3` |
-| `GATHER_PICK_TIMEOUT` | seconds the teams have to pick | `90` |
 | `GATHER_GRACE` | seconds a player has to say `/pw` on the server, told to them; keep it the servers' `GATHER_GRACE` | `30` |
 
 A `.env` in the working directory is read first ([.env.example](.env.example)).
@@ -124,8 +124,8 @@ out when the bot has one server):
 
 | call | what |
 |---|---|
-| `GET /api/state` | `{server, gather_id, phase, password, spec_password, maps, pool, teams}`; `phase` is `idle`, `picking` or `live`, `maps` is alpha's pick, bravo's and the tiebreaker once live, `pool` what `!map` may load |
-| `POST /api/round` | a round's end: `{gather_id, map_index, map, why, scores, winner, players, done}` |
+| `GET /api/state` | `{server, gather_id, phase, password, spec_password, tiebreaker, pool, teams}`; `phase` is `idle` or `live`, `tiebreaker` the third map, `pool` what `!map` may load |
+| `POST /api/round` | a counted map's end: `{gather_id, map_index, map, why, scores, winner, players, done}` |
 | `POST /api/event` | `{type: "join" or "leave", slot, name}`, for `!beta_status` to say who is on the server |
 | `GET /healthz` | `ok`, no secret |
 
@@ -147,7 +147,7 @@ GATHER_E2E_SERVER=/path/to/bettersoldat/build/linux/x86_64/release/bettersoldat-
 ## Layout
 
 - `cmd/gatherbot` — main: config, the API server, the Discord session.
-- `internal/gather` — one gather's state: teams, picks, passwords, the series.
+- `internal/gather` — one gather's state: teams, passwords, the tiebreaker, the series.
 - `internal/service` — the queue, the servers, the commands and the reports, and what each says.
 - `internal/api` — the HTTP side the scripts call.
 - `internal/discord` — the commands read from the channel, announcements and DMs.

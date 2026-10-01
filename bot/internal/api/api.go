@@ -1,6 +1,6 @@
 // Package api is the HTTP side the game servers' scripts talk to: each polls its
-// gather's state (the password it must ask for, the maps to play), posts each round's
-// end, and tells of joins and leaves. Every call carries the shared secret as a bearer
+// gather's state (the password it must ask for, the tiebreaker), posts each counted
+// round's end, and tells of joins and leaves. Every call carries the shared secret as a bearer
 // token, and the server's name in X-Gather-Server (which may be left out when the bot
 // has one server).
 //
@@ -28,12 +28,12 @@ const ServerHeader = "X-Gather-Server"
 type State struct {
 	Server       string              `json:"server"` // the server's name, as the bot knows it
 	GatherID     int                 `json:"gather_id"`
-	Phase        string              `json:"phase"` // "idle", "picking" or "live"
+	Phase        string              `json:"phase"` // "idle" or "live"
 	Password     string              `json:"password"`
 	SpecPassword string              `json:"spec_password"`
-	Maps         []string            `json:"maps"`  // alpha's pick, bravo's, the tiebreaker; empty until live
-	Pool         []string            `json:"pool"`  // the maps a team may pick, and !map may load
-	Teams        map[string][]string `json:"teams"` // "alpha" and "bravo", by Discord name
+	Tiebreaker   string              `json:"tiebreaker"` // the third map, drawn by the bot; "" while idle
+	Pool         []string            `json:"pool"`       // the maps !map takes
+	Teams        map[string][]string `json:"teams"`      // "alpha" and "bravo", by Discord name
 }
 
 // Event is something that happened on a server.

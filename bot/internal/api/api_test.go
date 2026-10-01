@@ -66,7 +66,7 @@ func TestSecretRequired(t *testing.T) {
 }
 
 func TestState(t *testing.T) {
-	b := &fakeBackend{state: State{Server: "eu1", GatherID: 4, Phase: "live", Password: "pw", SpecPassword: "sp", Maps: []string{"a", "b", "c"}, Teams: map[string][]string{"alpha": {"x"}, "bravo": {"y"}}}}
+	b := &fakeBackend{state: State{Server: "eu1", GatherID: 4, Phase: "live", Password: "pw", SpecPassword: "sp", Tiebreaker: "c", Pool: []string{"a", "b", "c"}, Teams: map[string][]string{"alpha": {"x"}, "bravo": {"y"}}}}
 	h := Handler("s3cret", b)
 	rec := do(t, h, "GET", "/api/state", "s3cret", "eu1", "")
 	if rec.Code != http.StatusOK {
@@ -76,7 +76,7 @@ func TestState(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.GatherID != 4 || got.Password != "pw" || len(got.Maps) != 3 || got.Teams["bravo"][0] != "y" || got.Server != "eu1" {
+	if got.GatherID != 4 || got.Password != "pw" || got.Tiebreaker != "c" || len(got.Pool) != 3 || got.Teams["bravo"][0] != "y" || got.Server != "eu1" {
 		t.Fatalf("state %+v", got)
 	}
 	if b.servers[0] != "eu1" {
