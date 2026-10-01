@@ -8,6 +8,10 @@
 -- gather's state every `poll_every` seconds, plays the gather's maps in order when one
 -- goes live (the tiebreaker only on 1-1), blocks map votes meanwhile, and posts each
 -- round's end back to the bot, which shows it in Discord.
+--
+-- In the chat, anyone but a spectator may say !map <name> (a CTF map of the bot's
+-- pool, between gathers), !p to pause, !up to count 3, 2, 1 and go on, and !r to
+-- replay the current map from the start, which in a gather counts for nothing.
 
 local bot_url = "http://127.0.0.1:8080" -- where gatherbot listens (GATHER_LISTEN)
 local secret = "change-me"              -- the same as the bot's GATHER_SECRET
@@ -133,14 +137,104 @@ function on_command(slot, text)
     return true
 end
 
+-- --- the chat commands: !map, !p, !up, !r ---------------------------------------------
+
+local countdown = nil -- ticks left until the game goes on, while !up counts
+local restarting = false -- !r: the round ending now is replayed, not counted
+
+local function in_series() return series.id and not series.done end
+
+local function who(slot)
+    local p = server.player(slot)
+    return p and p.name or "someone"
+end
+
+-- The map `name` names in the bot's pool: as given, in any case, with or without the
+-- ctf_ prefix, or as the one map it is a prefix of. The pool is the bot's, so only a
+-- map that is there is ever loaded: the server stops on a map it can't load.
+local function resolve_map(name)
+    local pool = state and state.pool or {}
+    local want = name:lower():gsub("^%s+", ""):gsub("%s+$", "")
+    if want == "" then return nil end
+    local bare = want:gsub("^ctf_", "")
+    local prefixed = {}
+    for _, m in ipairs(pool) do
+        local low = m:lower()
+        local lowbare = low:gsub("^ctf_", "")
+        if low == want or lowbare == bare then return m end
+        if lowbare:sub(1, #bare) == bare then prefixed[#prefixed + 1] = m end
+    end
+    if #prefixed == 1 then return prefixed[1] end
+    return nil
+end
+
+local function cmd_map(slot, name)
+    if in_series() then
+        server.say_to(slot, "A gather is on; its maps are set. !r replays the current one.", color)
+        return
+    end
+    if not state then
+        server.say_to(slot, "The gather bot is not reachable, so no map list to check against.", color)
+        return
+    end
+    local map = resolve_map(name or "")
+    if not map then
+        server.say_to(slot, "No CTF map called '" .. (name or "") .. "' in the pool.", color)
+        return
+    end
+    server.say(("%s changes the map to %s"):format(who(slot), map), color)
+    server.next_map(map)
+end
+
+local function cmd_pause(slot)
+    countdown = nil
+    if server.pause() then server.say(("Game paused by %s. !up to go on."):format(who(slot)), color)
+    else server.say_to(slot, "The game is already paused.", color) end
+end
+
+local function cmd_unpause(slot)
+    if not server.paused() then
+        server.say_to(slot, "The game is not paused.", color)
+        return
+    end
+    if countdown then return end
+    countdown = 3 * 60
+    server.say("3", color)
+end
+
+local function cmd_restart(slot)
+    if restarting then return end
+    if in_series() and not series.playing then
+        server.say_to(slot, "Wait for the gather's map to load.", color)
+        return
+    end
+    restarting = true
+    server.say(("%s restarts the round on %s"):format(who(slot), server.map()), color)
+    server.next_map(server.map())
+end
+
 function on_chat(slot, text, team)
-    if series.id and not series.done and text:lower():match("^/votemap") then
+    local lower = text:lower()
+    if in_series() and lower:match("^/votemap") then
         server.say_to(slot, "No map votes during a gather.", color)
         return true
     end
+    local cmd, arg = lower:match("^!(%a+)%s*(.*)$")
+    if not cmd then return end
+    if auth[slot] == "spec" then
+        server.say_to(slot, "Spectators don't run the game.", color)
+        return true
+    end
+    if cmd == "map" then cmd_map(slot, arg)
+    elseif cmd == "p" or cmd == "pause" then cmd_pause(slot)
+    elseif cmd == "up" or cmd == "unpause" then cmd_unpause(slot)
+    elseif cmd == "r" or cmd == "restart" then cmd_restart(slot)
+    else return end
+    return true
 end
 
-function on_second()
+-- Every second, by the server's own ticks (on_second stands still with the world).
+local function every_second()
     seconds = seconds + 1
     if seconds % poll_every == 0 then poll() end
     local now = os.time()
@@ -158,8 +252,27 @@ function on_second()
     end
 end
 
+local ticks = 0
+
+-- Every tick: the second's work by the server's own count, and the !up countdown,
+-- as the world's clock stands while paused.
+function on_tick(tick)
+    ticks = ticks + 1
+    if ticks % 60 == 0 then every_second() end
+    if not countdown then return end
+    countdown = countdown - 1
+    if countdown == 2 * 60 then server.say("2", color)
+    elseif countdown == 60 then server.say("1", color)
+    elseif countdown <= 0 then
+        countdown = nil
+        server.unpause()
+        server.say("Go!", color)
+    end
+end
+
 function on_match_end(winner)
     if not series.playing then return end
+    if restarting then return end -- !r: the round is replayed, not counted
     series.ended = series.index
     if winner == "alpha" or winner == "bravo" then series.wins[winner] = series.wins[winner] + 1 end
     local nxt
@@ -174,6 +287,10 @@ function on_match_end(winner)
 end
 
 function on_round_end(stats)
+    if restarting then
+        series.playing = false
+        return
+    end
     if not series.playing then return end
     series.playing = false
     local players = {}
@@ -194,12 +311,16 @@ function on_round_end(stats)
 end
 
 function on_round_start(map)
+    countdown = nil
+    local restarted = restarting
+    restarting = false
     if not series.id or series.done then return end
     local wanted = series.maps[series.index]
     if map == wanted then
         series.playing = true
         series.retries = 0
-        server.say(("Gather #%d, map %d of %d: %s"):format(series.id, series.index, #series.maps, map), color)
+        server.say(("Gather #%d, map %d of %d: %s%s"):format(series.id, series.index, #series.maps, map,
+            restarted and " (restarted)" or ""), color)
         return
     end
     -- The rotation got there first (a round ended by `nextmap` or a vote is settled

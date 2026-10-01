@@ -25,6 +25,18 @@ split 1-1. No rankings, nothing persisted: restart the bot and the queue is empt
 `!beta_spec` DMs the server and the spectators' password. `!beta_info` sends a player
 their DM again. `!beta_help` lists the commands.
 
+## In the game
+
+Players run a few things from the chat, whatever the gather is doing (spectators
+can't):
+
+| said | what |
+|---|---|
+| `!map <name>` | loads a CTF map of the pool (`ash` finds ctf_Ash), between gathers; during one the maps are set |
+| `!p` | pauses the game |
+| `!up` | counts 3, 2, 1 and goes on |
+| `!r` | replays the current map from the start; in a gather the round so far doesn't count |
+
 ## The password
 
 bettersoldat's server has no password of its own, so the script keeps the door: anyone

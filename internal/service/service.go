@@ -255,6 +255,7 @@ func (s *Service) State() api.State {
 		Password:     s.g.Password,
 		SpecPassword: s.g.SpecPassword,
 		Maps:         s.g.Maps(),
+		Pool:         s.g.SortedPool(),
 		Teams:        map[string][]string{},
 	}
 	if st.Maps == nil {

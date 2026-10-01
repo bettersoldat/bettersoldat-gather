@@ -26,6 +26,7 @@ type State struct {
 	Password     string              `json:"password"`
 	SpecPassword string              `json:"spec_password"`
 	Maps         []string            `json:"maps"`  // alpha's pick, bravo's, the tiebreaker; empty until live
+	Pool         []string            `json:"pool"`  // the maps a team may pick, and !map may load
 	Teams        map[string][]string `json:"teams"` // "alpha" and "bravo", by Discord name
 }
 

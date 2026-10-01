@@ -44,6 +44,7 @@ func (f *fakeBot) handler() http.Handler {
 
 func (f *fakeBot) State() api.State {
 	return api.State{GatherID: 1, Phase: "live", Password: "playpw", SpecPassword: "specpw", Maps: maps,
+		Pool:  append([]string{"ctf_Ash"}, maps...),
 		Teams: map[string][]string{"alpha": {"a"}, "bravo": {"b"}}}
 }
 
@@ -88,6 +89,8 @@ func TestScriptPlaysTheSeries(t *testing.T) {
 		{`local bot_url = "http://127.0.0.1:8080"`, `local bot_url = "` + srv.URL + `"`},
 		{`local secret = "change-me"`, `local secret = "` + secret + `"`},
 		{`local poll_every = 3`, `local poll_every = 1`},
+		// a say_to goes nowhere without a joined player: print it, so the test sees it
+		{`local color = "7FD6FF"`, `local color = "7FD6FF"; local _say_to = server.say_to; server.say_to = function(slot, text, c) server.print("[to " .. slot .. "] " .. text); _say_to(slot, text, c) end`},
 	} {
 		if !strings.Contains(text, r.old) {
 			t.Fatalf("script lacks %q", r.old)
@@ -166,6 +169,31 @@ func TestScriptPlaysTheSeries(t *testing.T) {
 	waitFor("gather: #1 is live: ctf_Kampf, ctf_Division, ctf_Laos", 15*time.Second)
 	waitFor("Gather #1, map 1 of 3: ctf_Kampf", 30*time.Second)
 
+	// The chat commands, said as slot 0 through the console's `lua`. !p pauses, !up
+	// counts 3, 2, 1 and goes on; !r replays the map without a report; !map is
+	// refused while the series is on.
+	// (the console takes its quotes off the line, so the strings go in Lua's brackets)
+	say := func(text string) { io.WriteString(stdin, "lua on_chat(0, [["+text+"]], false)\n") }
+	say("!p")
+	waitFor("Game paused by someone", 10*time.Second)
+	say("!up")
+	waitFor("Go!", 10*time.Second)
+	for _, n := range []string{"\n3\n", "\n2\n", "\n1\n"} {
+		if !strings.Contains(logged(), n) {
+			t.Fatalf("the countdown lacked %q:\n%s", n, logged())
+		}
+	}
+	io.WriteString(stdin, "lua server.print([[paused: ]] .. tostring(server.paused()))\n")
+	waitFor("paused: false", 10*time.Second)
+	say("!map ash")
+	waitFor("[to 0] A gather is on", 10*time.Second)
+	say("!r")
+	waitFor("someone restarts the round on ctf_Kampf", 10*time.Second)
+	waitFor("ctf_Kampf (restarted)", 30*time.Second)
+	if bot.reportCount() != 0 {
+		t.Fatalf("a restart was reported: %+v", bot.reports)
+	}
+
 	for i, next := range []string{"ctf_Division", "ctf_Laos", ""} {
 		io.WriteString(stdin, "nextmap\n")
 		waitForReports(i+1, 30*time.Second)
@@ -191,4 +219,13 @@ func TestScriptPlaysTheSeries(t *testing.T) {
 	if !strings.Contains(logged(), "Gather #1 is over") {
 		t.Errorf("the end was not told:\n%s", logged())
 	}
+	bot.mu.Unlock()
+
+	// with the series over, !map loads a CTF map of the pool, and nothing else
+	say("!map nope")
+	waitFor("[to 0] No CTF map called 'nope'", 10*time.Second)
+	say("!map ash")
+	waitFor("someone changes the map to ctf_Ash", 10*time.Second)
+	waitFor("Next map: ctf_Ash", 10*time.Second)
+	bot.mu.Lock()
 }
