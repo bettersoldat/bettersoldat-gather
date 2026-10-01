@@ -128,8 +128,12 @@ fly secrets set GATHER_SECRET=...
 ```
 
 ```bash
-fly deploy
+fly deploy --ha=false
 ```
+
+`--ha=false` keeps it to one machine; Fly otherwise adds a second "for high
+availability", which here would be a second game server behind the same address,
+with players landing on either. `fly scale count 1` puts it right if that happened.
 
 Then:
 

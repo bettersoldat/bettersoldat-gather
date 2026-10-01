@@ -90,8 +90,11 @@ fly secrets set GATHER_DISCORD_TOKEN=... GATHER_SECRET=...
 ```
 
 ```bash
-fly deploy
+fly deploy --ha=false
 ```
+
+`--ha=false` keeps it to one machine; Fly otherwise adds a second "for high
+availability", which here would be a second bot answering every command twice.
 
 The app's URL (`https://gather-bot.fly.dev`) is what the servers' `GATHER_BOT_URL`
 points at. Servers in the same Fly organisation can use the private network instead,
