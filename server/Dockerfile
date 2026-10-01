@@ -26,12 +26,11 @@ ENV PATH="/root/.local/bin:${PATH}"
 WORKDIR /src
 RUN git clone "${BETTERSOLDAT_REPO}" . && git checkout "${BETTERSOLDAT_REF}"
 
-# sv_ip, the address the server listens on, which fly.io's UDP needs (README.md): the
-# patch goes on until bettersoldat has it; a ref that already does is left alone.
-COPY sv_ip.patch /tmp/sv_ip.patch
-RUN if grep -q '"sv_ip"' server/main.c; then echo "sv_ip is upstream"; \
-    else git apply --verbose /tmp/sv_ip.patch; fi \
-    && grep -q '"sv_ip"' server/main.c
+# fly.io's UDP needs the server to bind one address (README.md), which sv_ip does; a
+# ref from before it would listen on every one and go unanswered there, so the build
+# stops on such a ref rather than make a server that fails quietly.
+RUN grep -q '"sv_ip"' server/main.c \
+    || { echo "bettersoldat ${BETTERSOLDAT_REF} has no sv_ip: use a ref with feat(server): sv_ip" >&2; exit 1; }
 
 RUN xmake f -m release -y && xmake build -y server
 

@@ -71,19 +71,17 @@ xmake installs every package the project requires as it configures; it takes a f
 minutes the first time.
 
 ```bash
-docker build -t bettersoldat-gather --build-arg BETTERSOLDAT_REF=v0.3.0 .
+docker build -t bettersoldat-gather --build-arg BETTERSOLDAT_REF=main .
 ```
 
 ```bash
 docker run -p 23073:23073/udp -e GATHER_BOT_URL=https://gather-bot.fly.dev -e GATHER_SECRET=... -e GATHER_SERVER_NAME=eu1 bettersoldat-gather
 ```
 
-The server's `sv_ip` cvar, which the entrypoint sets, isn't in bettersoldat yet:
-[sv_ip.patch](sv_ip.patch) adds it (a `+sv_ip <address>` on the command line, or
-`set sv_ip` in config.cfg, binds that address alone; empty binds every one), and the
-build applies it unless the ref already has it. It is a dozen lines across
-`shared/network/transport.{c,h}`, `server/host.{c,h}`, `server/main.c`, `config.cfg`
-and two tests, ready to land upstream as `feat(server): sv_ip, the address to listen on`.
+The entrypoint sets the server's `sv_ip` cvar (`feat(server): sv_ip, the address to
+listen on`, after v0.2.0): `+sv_ip <address>` binds that address alone, empty binds
+every one. The build refuses a `BETTERSOLDAT_REF` from before it, since a server that
+listens on every address goes unanswered on fly.io.
 
 ## On fly.io
 
