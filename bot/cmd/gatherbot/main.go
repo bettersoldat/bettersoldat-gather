@@ -1,4 +1,4 @@
-// gatherbot: a Discord gather bot for bettersoldat. It queues players in a channel,
+// gatherbot: a Discord gather bot for SoldatReloaded. It queues players in a channel,
 // makes two teams when enough have joined, DMs them the server and its password, draws
 // the tiebreaker, and shows each map's end as the server's script reports it; the maps
 // themselves are picked in the game. See README.md.

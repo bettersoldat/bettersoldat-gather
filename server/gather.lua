@@ -1,4 +1,4 @@
--- The gather script for a bettersoldat server (docs/scripting.md), the other half of
+-- The gather script for a SoldatReloaded server (docs/scripting.md), the other half of
 -- gatherbot. Copy it to the server's scripts/server.lua, or start the server with
 -- +sv_script path/to/gather.lua, and set the values below or their environment
 -- variables. One bot serves several servers: each says its name with every request.

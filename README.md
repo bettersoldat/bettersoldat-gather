@@ -1,11 +1,11 @@
 # gather-bot
 
-A Discord gather bot for [bettersoldat](https://github.com/bettersoldat/bettersoldat),
+A Discord gather bot for [SoldatReloaded](https://github.com/bettersoldat/bettersoldat),
 in two halves that deploy on their own:
 
 - [bot/](bot/README.md) — the Discord bot, in Go: the queue, the teams, the map picks,
   the passwords, the round reports. One of these.
-- [server/](server/README.md) — a bettersoldat dedicated server with the gather script
+- [server/](server/README.md) — a SoldatReloaded dedicated server with the gather script
   on it, as a Docker image for fly.io. As many of these as you like; each tells the bot
   its name, and the bot runs one gather on each.
 

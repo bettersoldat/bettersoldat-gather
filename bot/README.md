@@ -1,6 +1,6 @@
 # gatherbot
 
-The Discord half: one bot, in one channel, running gathers on one or more bettersoldat
+The Discord half: one bot, in one channel, running gathers on one or more SoldatReloaded
 servers. 3v3 CTF, best of three: the teams start their maps in the game, the bot draws
 the tiebreaker, and it is played only when the first two are split 1-1. Nothing is
 ranked or persisted; restarting the bot empties the queue.
@@ -55,7 +55,7 @@ the bot's word); the players put it in the main menu's Join page with the addres
 | `GATHER_SECRET` | shared with every server's script; sent as a bearer token | required |
 | `GATHER_LISTEN` | where the HTTP API listens | `:8080` |
 | `GATHER_PREFIX` | the command prefix | `!beta_` |
-| `GATHER_MAPS` | the map pool `!map` takes and the tiebreaker is drawn from, space-separated | bettersoldat's CTF maps |
+| `GATHER_MAPS` | the map pool `!map` takes and the tiebreaker is drawn from, space-separated | SoldatReloaded's CTF maps |
 | `GATHER_TEAM_SIZE` | players a side | `3` |
 
 A `.env` in the working directory is read first ([.env.example](.env.example)).
@@ -139,11 +139,11 @@ go test ./...
 
 The end-to-end test under `internal/e2e` runs the script on a real server against a
 fake bot, typing `nextmap` and the chat commands at its console to run a three-map
-series through. It needs the server's binary built from bettersoldat and runs only when
+series through. It needs the server's binary built from SoldatReloaded and runs only when
 told where it is, with absolute paths:
 
 ```bash
-GATHER_E2E_SERVER=/path/to/bettersoldat/build/linux/x86_64/release/bettersoldat-server GATHER_E2E_DIR=/path/to/bettersoldat go test ./internal/e2e -v
+GATHER_E2E_SERVER=/path/to/soldatreloaded/build/linux/x86_64/release/soldatreloaded-server GATHER_E2E_DIR=/path/to/soldatreloaded go test ./internal/e2e -v
 ```
 
 ## Layout

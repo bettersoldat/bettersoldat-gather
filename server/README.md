@@ -1,6 +1,6 @@
 # The gather server
 
-The game half: a bettersoldat dedicated server with [gather.lua](gather.lua) as its
+The game half: a SoldatReloaded dedicated server with [gather.lua](gather.lua) as its
 script, packaged as a Docker image for fly.io (or anywhere). Run as many as you like;
 each tells the one bot its name.
 
@@ -47,7 +47,7 @@ The server's, read by [entrypoint.sh](entrypoint.sh):
 |---|---|---|
 | `SV_PORT` | the UDP port | `23073` |
 | `SV_IP` | the address to listen on; empty for every one, and on fly.io the `fly-global-services` address is found by itself | empty |
-| `SV_HOSTNAME` | the name on the scoreboard | `bettersoldat gather` |
+| `SV_HOSTNAME` | the name on the scoreboard | `SoldatReloaded gather` |
 | `SV_MAP` | the map between gathers | `ctf_Ash` |
 | `SV_TIMELIMIT` | minutes a round lasts | `10` |
 | `SV_KILLLIMIT` | captures that win a round | `10` |
@@ -56,10 +56,10 @@ Anything else goes on the command line as the server's own `+cvar value`.
 
 ## Without Docker
 
-From bettersoldat's directory, with the script and a gather's limits:
+From SoldatReloaded's directory, with the script and a gather's limits:
 
 ```bash
-GATHER_BOT_URL=http://127.0.0.1:8080 GATHER_SECRET=change-me ./bettersoldat-server +sv_script ../gather-bot/server/gather.lua +sv_timelimit 10 +sv_killlimit 10
+GATHER_BOT_URL=http://127.0.0.1:8080 GATHER_SECRET=change-me ./soldatreloaded-server +sv_script ../gather-bot/server/gather.lua +sv_timelimit 10 +sv_killlimit 10
 ```
 
 The time and kill limits are the server's and read as it starts, so they go on the
@@ -67,18 +67,21 @@ command line or in its `config.cfg`.
 
 ## The image
 
-[Dockerfile](Dockerfile) downloads bettersoldat's Linux server release
-(`bettersoldat-<version>-linux-x86_64-server.tar.gz` from
+[Dockerfile](Dockerfile) downloads SoldatReloaded's Linux server release
+(`soldatreloaded-<version>-linux-x86_64-server.tar.gz` from
 [the releases](https://github.com/bettersoldat/bettersoldat/releases): the executable,
 `config.cfg` and the assets a server reads) and adds the script. Nothing is compiled.
-`BETTERSOLDAT_VERSION` is a release tag, or `latest` for the newest.
+Releases up to v0.3.2, from before the game was renamed, are named
+`bettersoldat-<version>-…` with a `bettersoldat-server` inside; the Dockerfile falls back
+to that name and renames the executable, so an older tag still builds.
+`SOLDATRELOADED_VERSION` is a release tag, or `latest` for the newest.
 
 ```bash
-docker build -t bettersoldat-gather --build-arg BETTERSOLDAT_VERSION=latest .
+docker build -t soldatreloaded-gather --build-arg SOLDATRELOADED_VERSION=latest .
 ```
 
 ```bash
-docker run -p 23073:23073/udp -e GATHER_BOT_URL=https://gather-bot.fly.dev -e GATHER_SECRET=... -e GATHER_SERVER_NAME=eu1 bettersoldat-gather
+docker run -p 23073:23073/udp -e GATHER_BOT_URL=https://gather-bot.fly.dev -e GATHER_SECRET=... -e GATHER_SERVER_NAME=eu1 soldatreloaded-gather
 ```
 
 The entrypoint sets the server's `sv_ip` cvar (`feat(server): sv_ip, the address to
@@ -104,11 +107,11 @@ One Fly app per server. [fly.toml](fly.toml) is one server's; for another, copy 
   and `services.ports.port` are both 23073.
 - **A dedicated IPv4.** UDP doesn't work over Fly's shared IPv4 or public IPv6, so the
   app needs its own IPv4 (`fly ips allocate-v4`, a couple of dollars a month).
-  bettersoldat's wire is IPv4 anyway.
+  SoldatReloaded's wire is IPv4 anyway.
 - **Keep the machine running.** The proxy can't wake a stopped machine for a UDP
   packet, so `auto_stop_machines = "off"` and `min_machines_running = 1`.
 - **Packet size.** WireGuard and the UDP proxy take about 72 bytes of each packet;
-  bettersoldat's packets are at most 1200 bytes (`NET_MTU`), under the limit.
+  SoldatReloaded's packets are at most 1200 bytes (`NET_MTU`), under the limit.
 
 ### The first deploy
 
@@ -116,7 +119,7 @@ From this directory, with [flyctl](https://fly.io/docs/flyctl/install/) installe
 `fly auth login` done:
 
 ```bash
-fly launch --no-deploy --copy-config --name bettersoldat-eu1
+fly launch --no-deploy --copy-config --name soldatreloaded-eu1
 ```
 
 ```bash
@@ -142,8 +145,8 @@ fly ips list
 ```
 
 gives the IPv4 players connect to, as `<ip>:23073`; the app's name also resolves to
-it, so `bettersoldat-eu1.fly.dev:23073` works in the client and is what goes into the
-bot's `GATHER_SERVERS` (`eu1=bettersoldat-eu1.fly.dev:23073`).
+it, so `soldatreloaded-eu1.fly.dev:23073` works in the client and is what goes into the
+bot's `GATHER_SERVERS` (`eu1=soldatreloaded-eu1.fly.dev:23073`).
 
 ### Day to day
 
@@ -156,7 +159,7 @@ fly status
 ```
 
 ```bash
-fly deploy --build-arg BETTERSOLDAT_VERSION=v0.3.0   # a particular bettersoldat release; "latest" otherwise
+fly deploy --build-arg SOLDATRELOADED_VERSION=v0.3.0   # a particular SoldatReloaded release; "latest" otherwise
 ```
 
 ```bash

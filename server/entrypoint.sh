@@ -12,10 +12,10 @@ if [ -z "$bind" ] && resolved=$(getent hosts fly-global-services 2>/dev/null); t
     echo "entrypoint: fly-global-services is $bind; listening there"
 fi
 
-exec ./bettersoldat-server \
+exec ./soldatreloaded-server \
     +sv_ip "$bind" \
     +sv_port "${SV_PORT:-23073}" \
-    +sv_hostname "${SV_HOSTNAME:-bettersoldat gather}" \
+    +sv_hostname "${SV_HOSTNAME:-SoldatReloaded gather}" \
     +map "${SV_MAP:-ctf_Ash}" \
     +sv_gamemode 2 \
     +sv_timelimit "${SV_TIMELIMIT:-10}" \

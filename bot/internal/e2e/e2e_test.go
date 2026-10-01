@@ -1,10 +1,10 @@
-// An end-to-end run of server/gather.lua on a real bettersoldat server, against a fake
+// An end-to-end run of server/gather.lua on a real SoldatReloaded server, against a fake
 // bot. It runs only when GATHER_E2E_SERVER names the server's binary and
-// GATHER_E2E_DIR the directory to run it from (bettersoldat's root, for ./assets),
+// GATHER_E2E_DIR the directory to run it from (SoldatReloaded's root, for ./assets),
 // both absolute:
 //
-//	GATHER_E2E_SERVER=/abs/path/to/bettersoldat/build/windows/x64/release/bettersoldat-server.exe \
-//	GATHER_E2E_DIR=/abs/path/to/bettersoldat go test ./internal/e2e -v
+//	GATHER_E2E_SERVER=/abs/path/to/soldatreloaded/build/windows/x64/release/soldatreloaded-server.exe \
+//	GATHER_E2E_DIR=/abs/path/to/soldatreloaded go test ./internal/e2e -v
 //
 // The fake bot says a gather is live with ctf_Laos as the tiebreaker. The chat
 // commands are said as slot 0 through the console's `lua`, and `nextmap` typed at the

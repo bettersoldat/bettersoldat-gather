@@ -31,7 +31,7 @@ type Config struct {
 	TeamSize  int      // GATHER_TEAM_SIZE: 3 by default
 }
 
-// DefaultMaps is bettersoldat's CTF maps (assets/maps/ctf_*.pms).
+// DefaultMaps is SoldatReloaded's CTF maps (assets/maps/ctf_*.pms).
 var DefaultMaps = []string{
 	"ctf_Aftermath", "ctf_Amnesia", "ctf_Ash", "ctf_B2b", "ctf_Blade", "ctf_Campeche", "ctf_Cobra",
 	"ctf_Crucifix", "ctf_Death", "ctf_Division", "ctf_Dropdown", "ctf_Equinox", "ctf_Guardian",
