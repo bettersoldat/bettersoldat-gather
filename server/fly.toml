@@ -11,7 +11,7 @@ primary_region = "ams"
 [build]
   dockerfile = "Dockerfile"
   [build.args]
-    BETTERSOLDAT_VERSION = "latest"   # a bettersoldat release tag (v0.3.0), or the latest
+    BETTERSOLDAT_VERSION = "v0.3.1"   # a bettersoldat release tag, or "latest"; v0.3.1 is the first with sv_ip and sv_password
 
 [env]
   SV_HOSTNAME = "bettersoldat gather eu1"

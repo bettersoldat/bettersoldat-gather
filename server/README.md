@@ -84,8 +84,7 @@ listen on`, after v0.2.0): `+sv_ip <address>` binds that address alone, empty bi
 every one. The build refuses a release from before it, since a server that listens on
 every address goes unanswered on fly.io. The script also needs `sv_password`
 (`feat(net): a server password`, which bumps the wire to version 9, so the client has
-to be as new). v0.2.0 has neither, so the first release that works here is the one
-tagged after both commits.
+to be as new). v0.3.1 is the first release with both; fly.toml pins it.
 
 ## On fly.io
 
