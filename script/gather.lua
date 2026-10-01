@@ -11,7 +11,8 @@
 --
 -- In the chat, anyone but a spectator may say !map <name> (a CTF map of the bot's
 -- pool, between gathers), !p to pause, !up to count 3, 2, 1 and go on, and !r to
--- replay the current map from the start, which in a gather counts for nothing.
+-- replay the current map from the start, which in a gather counts for nothing;
+-- anyone may say !status for the gather, the series and the round's score.
 
 local bot_url = "http://127.0.0.1:8080" -- where gatherbot listens (GATHER_LISTEN)
 local secret = "change-me"              -- the same as the bot's GATHER_SECRET
@@ -213,6 +214,34 @@ local function cmd_restart(slot)
     server.next_map(server.map())
 end
 
+local function cmd_status(slot)
+    local lines = {}
+    if not state then
+        lines[#lines + 1] = "The gather bot is unreachable; no gather can start."
+    elseif state.phase == "idle" then
+        lines[#lines + 1] = ("Gather #%d: nobody playing yet; !beta_add in Discord to queue."):format(state.gather_id)
+    else
+        lines[#lines + 1] = ("Gather #%d: %s"):format(state.gather_id,
+            state.phase == "picking" and "the teams are picking their maps in Discord" or "live")
+        if state.teams then
+            lines[#lines + 1] = ("Alpha: %s | Bravo: %s"):format(
+                table.concat(state.teams.alpha or {}, ", "), table.concat(state.teams.bravo or {}, ", "))
+        end
+        if state.maps and #state.maps > 0 then
+            lines[#lines + 1] = ("Maps: %s, %s, then %s if 1-1"):format(state.maps[1], state.maps[2], state.maps[3] or "?")
+        end
+    end
+    if in_series() then
+        lines[#lines + 1] = ("Series: alpha %d - %d bravo, map %d of %d%s"):format(
+            series.wins.alpha, series.wins.bravo, series.index, #series.maps,
+            series.playing and "" or " (loading)")
+    end
+    local s, left = server.scores(), math.floor(server.time_left())
+    lines[#lines + 1] = ("Now on %s: alpha %d - %d bravo, %d:%02d left%s"):format(
+        server.map(), s.alpha, s.bravo, left // 60, left % 60, server.paused() and ", paused" or "")
+    for _, line in ipairs(lines) do server.say_to(slot, line, color) end
+end
+
 function on_chat(slot, text, team)
     local lower = text:lower()
     if in_series() and lower:match("^/votemap") then
@@ -221,6 +250,10 @@ function on_chat(slot, text, team)
     end
     local cmd, arg = lower:match("^!(%a+)%s*(.*)$")
     if not cmd then return end
+    if cmd == "status" then
+        cmd_status(slot)
+        return true
+    end
     if auth[slot] == "spec" then
         server.say_to(slot, "Spectators don't run the game.", color)
         return true

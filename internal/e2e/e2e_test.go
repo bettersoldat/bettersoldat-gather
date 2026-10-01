@@ -176,6 +176,14 @@ func TestScriptPlaysTheSeries(t *testing.T) {
 	say := func(text string) { io.WriteString(stdin, "lua on_chat(0, [["+text+"]], false)\n") }
 	say("!p")
 	waitFor("Game paused by someone", 10*time.Second)
+	say("!status")
+	waitFor("[to 0] Gather #1: live", 10*time.Second)
+	waitFor("[to 0] Alpha: a | Bravo: b", 10*time.Second)
+	waitFor("[to 0] Series: alpha 0 - 0 bravo, map 1 of 3", 10*time.Second)
+	waitFor("[to 0] Now on ctf_Kampf: alpha 0 - 0 bravo", 10*time.Second)
+	if !strings.Contains(logged(), "left, paused") {
+		t.Fatalf("!status did not say paused:\n%s", logged())
+	}
 	say("!up")
 	waitFor("Go!", 10*time.Second)
 	for _, n := range []string{"\n3\n", "\n2\n", "\n1\n"} {

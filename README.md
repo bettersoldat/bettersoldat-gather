@@ -36,6 +36,7 @@ can't):
 | `!p` | pauses the game |
 | `!up` | counts 3, 2, 1 and goes on |
 | `!r` | replays the current map from the start; in a gather the round so far doesn't count |
+| `!status` | the gather, the teams, the series, and the round's score and time (spectators too) |
 
 ## The password
 
