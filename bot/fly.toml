@@ -15,7 +15,7 @@ primary_region = "ams"
   # runs: name=host:port; both space-separated
   GATHER_CHANNEL_ID = "1555216517673779221 1555278127331020933"
   GATHER_SERVERS = "eu=soldatreloaded-eu.fly.dev:23073"
-  GATHER_PREFIX = "!test_"
+  GATHER_PREFIX = "!"
   GATHER_TEAM_SIZE = "3"
   # who may have every server's password DM'd (the passwords command): Discord user IDs
   GATHER_ADMIN_IDS = "511603215591276584"

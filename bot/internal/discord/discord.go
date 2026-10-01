@@ -1,4 +1,4 @@
-// Package discord is the bot's face: it reads the !beta_ commands in the gather
+// Package discord is the bot's face: it reads the ! commands in the gather
 // channels, answers each in the channel it came from, and is the service's Notifier for
 // announcements, which go to every gather channel, and DMs. The channels share the one
 // gather: a player added in any of them is in the same queue.

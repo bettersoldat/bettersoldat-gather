@@ -26,7 +26,7 @@ type Config struct {
 	Servers  []Server // GATHER_SERVERS: "name=host:port name=host:port"; or GATHER_SERVER_ADDR for one, named "main"
 	Listen   string   // GATHER_LISTEN: the API's address, ":8080" by default
 	Secret   string   // GATHER_SECRET: shared with the server's script
-	Prefix   string   // GATHER_PREFIX: "!beta_" by default
+	Prefix   string   // GATHER_PREFIX: "!" by default
 	Maps     []string // GATHER_MAPS: the pool, space-separated; the CTF maps by default
 	TeamSize int      // GATHER_TEAM_SIZE: 3 by default
 	Admins   []string // GATHER_ADMIN_IDS: the Discord user IDs that may have every server's password DM'd; none by default
@@ -51,7 +51,7 @@ func Load() (Config, error) {
 		Channels: ParseList(os.Getenv("GATHER_CHANNEL_ID")),
 		Listen:   getenv("GATHER_LISTEN", ":8080"),
 		Secret:   os.Getenv("GATHER_SECRET"),
-		Prefix:   getenv("GATHER_PREFIX", "!beta_"),
+		Prefix:   getenv("GATHER_PREFIX", "!"),
 		Maps:     strings.Fields(os.Getenv("GATHER_MAPS")),
 		Admins:   ParseList(os.Getenv("GATHER_ADMIN_IDS")),
 	}

@@ -76,7 +76,7 @@ func New(cfg Config, n Notifier) *Service {
 		cfg.TeamSize = 3
 	}
 	if cfg.Prefix == "" {
-		cfg.Prefix = "!beta_"
+		cfg.Prefix = "!"
 	}
 	if len(cfg.Servers) == 0 {
 		panic("service: at least one server is needed")

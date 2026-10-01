@@ -7,25 +7,25 @@ ranked or persisted; restarting the bot empties the queue.
 
 ## How a gather goes
 
-1. Players `!beta_add` in the gather channel. `!beta_del` leaves, `!beta_status` shows
+1. Players `!add` in the gather channel. `!del` leaves, `!status` shows
    the queue and every server.
 2. At six, the bot takes the first free server, shuffles the six into **Alpha** and
    **Bravo**, makes a password for the players and another for spectators, draws the
    tiebreaker from the pool, and DMs each player the server's address, their password
    and their team. With every server busy the six wait, and start on the first server
    that frees up.
-3. In the game, `!map <map>` starts a map (`!beta_maps` lists the pool). A map counts
+3. In the game, `!map <map>` starts a map (`!maps` lists the pool). A map counts
    once it runs to its end; `!r` replays it from the start and `!map` another cuts it
    short, and neither counts. At 1-1, `!tb` plays the tiebreaker. The server's script
    posts each counted map's end, and the bot shows the score, the series and
    everyone's kills, deaths, caps and ping.
 4. After two maps with a team ahead, or after the third, the bot changes both
-   passwords again, so the server is locked, and the queue goes on. `!beta_abort` does
+   passwords again, so the server is locked, and the queue goes on. `!abort` does
    the same at any point (a player of the gather ends their own; anyone with Manage
    Server ends any, by server name).
 
-`!beta_spec [server]` DMs a server's address and password, to watch from the
-spectators. `!beta_info` sends a player their DM again. `!beta_help` lists the commands.
+`!spec [server]` DMs a server's address and password, to watch from the
+spectators. `!info` sends a player their DM again. `!help` lists the commands.
 
 The password is the server's own (`sv_password`, which the script on it keeps set to
 the bot's word); the players put it in the main menu's Join page with the address.
@@ -36,7 +36,7 @@ the bot's word); the players put it in the main menu's Join page with the addres
    **New Application**, name it.
 2. **Bot** tab: **Reset Token** and copy it; that is `GATHER_DISCORD_TOKEN`. Under
    **Privileged Gateway Intents** turn on **Message Content Intent** (the bot reads the
-   `!beta_` lines). Turn off **Public Bot** unless you want others to invite it.
+   `!` lines). Turn off **Public Bot** unless you want others to invite it.
 3. **OAuth2** tab, **URL Generator**: scope `bot`; permissions **View Channels**,
    **Send Messages**, **Read Message History**. Open the URL it makes and invite the bot
    to your server.
@@ -45,7 +45,7 @@ the bot's word); the players put it in the main menu's Join page with the addres
    channel (a second server, say) goes in the same setting, separated by spaces; the bot
    must be invited to each server.
 5. The bot DMs players. A player whose DMs are closed to server members is named in
-   the channel and can open them and use `!beta_info`.
+   the channel and can open them and use `!info`.
 
 ## Environment
 
@@ -55,9 +55,9 @@ the bot's word); the players put it in the main menu's Join page with the addres
 | `GATHER_CHANNEL_ID` | the channels the bot listens and talks in, separated by spaces or commas; they share one gather, each command is answered where it was said, and the announcements go to all of them | required |
 | `GATHER_SERVERS` | the game servers, `name=host:port`, separated by spaces or commas; the name is what each server's script says (`GATHER_SERVER_NAME`), the host:port what players are told to join | required (or `GATHER_SERVER_ADDR` for one server, named `main`) |
 | `GATHER_SECRET` | shared with every server's script; sent as a bearer token | required |
-| `GATHER_ADMIN_IDS` | Discord user IDs, separated by spaces or commas, that may use `!beta_passwords`: every server's address and password DM'd, a gather on it or not, to get onto a locked server between gathers; anyone else is turned away | none |
+| `GATHER_ADMIN_IDS` | Discord user IDs, separated by spaces or commas, that may use `!passwords`: every server's address and password DM'd, a gather on it or not, to get onto a locked server between gathers; anyone else is turned away | none |
 | `GATHER_LISTEN` | where the HTTP API listens | `:8080` |
-| `GATHER_PREFIX` | the command prefix | `!beta_` |
+| `GATHER_PREFIX` | the command prefix | `!` |
 | `GATHER_MAPS` | the map pool `!map` takes and the tiebreaker is drawn from, space-separated | SoldatReloaded's CTF maps |
 | `GATHER_TEAM_SIZE` | players a side | `3` |
 
@@ -131,7 +131,7 @@ out when the bot has one server):
 |---|---|
 | `GET /api/state` | `{server, version, gather_id, phase, password, tiebreaker, pool, teams}`; `phase` is `idle` or `live`, `password` what the server must ask, `tiebreaker` the third map, `pool` what `!map` may load. With `?since=<version>` the answer is held until the state changes (or 25 seconds pass): the script's long poll, so a change reaches the server at once and nothing is sent meanwhile |
 | `POST /api/round` | a counted map's end: `{gather_id, map_index, map, why, scores, winner, players, done}` |
-| `POST /api/event` | `{type: "join" or "leave", slot, name}`, for `!beta_status` to say who is on the server |
+| `POST /api/event` | `{type: "join" or "leave", slot, name}`, for `!status` to say who is on the server |
 | `GET /healthz` | `ok`, no secret |
 
 ## Tests
