@@ -1,9 +1,9 @@
 # fly.io: the one gather bot. README.md walks through the first deploy; in short:
-#   fly launch --no-deploy --copy-config --name <app>     (once)
+#   fly launch --no-deploy --copy-config --name bettersoldat-bot     (once)
 #   fly secrets set GATHER_DISCORD_TOKEN=... GATHER_SECRET=...
 #   fly deploy
 # The bot talks to Discord outbound; the HTTP service is for the game servers' scripts.
-app = "gather-bot"
+app = "bettersoldat-bot"
 primary_region = "ams"
 
 [build]
@@ -12,8 +12,8 @@ primary_region = "ams"
 [env]
   GATHER_LISTEN = ":8080"
   # the channel the bot lives in, and the servers it runs: name=host:port, space-separated
-  GATHER_CHANNEL_ID = "000000000000000000"
-  GATHER_SERVERS = "eu1=bettersoldat-eu1.fly.dev:23073"
+  GATHER_CHANNEL_ID = "1555196261286809712"
+  GATHER_SERVERS = "eu=bettersoldat-eu.fly.dev:23073"
   GATHER_PREFIX = "!beta_"
   GATHER_TEAM_SIZE = "3"
   # GATHER_DISCORD_TOKEN and GATHER_SECRET are secrets: fly secrets set ...

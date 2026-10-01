@@ -1,11 +1,11 @@
 # fly.io: one gather server. One app per server; copy this file per server and change
 # the app name, the region and GATHER_SERVER_NAME. README.md walks through the first
 # deploy; in short:
-#   fly launch --no-deploy --copy-config --name <app>     (once)
+#   fly launch --no-deploy --copy-config --name bettersoldat-eu     (once)
 #   fly ips allocate-v4                                   (once: UDP needs a dedicated IPv4)
 #   fly secrets set GATHER_SECRET=...
 #   fly deploy
-app = "bettersoldat-eu1"
+app = "bettersoldat-eu"
 primary_region = "ams"
 
 [build]
@@ -14,14 +14,14 @@ primary_region = "ams"
     BETTERSOLDAT_VERSION = "v0.3.1"   # a bettersoldat release tag, or "latest"; v0.3.1 is the first with sv_ip and sv_password
 
 [env]
-  SV_HOSTNAME = "bettersoldat gather eu1"
+  SV_HOSTNAME = "bettersoldat gather eu"
   SV_PORT = "23073"
   SV_MAP = "ctf_Ash"
   SV_TIMELIMIT = "10"
   SV_KILLLIMIT = "10"
   # this server's name in the bot's GATHER_SERVERS, and where the bot answers
-  GATHER_SERVER_NAME = "eu1"
-  GATHER_BOT_URL = "https://gather-bot.fly.dev"
+  GATHER_SERVER_NAME = "eu"
+  GATHER_BOT_URL = "https://bettersoldat-bot.fly.dev"
   # GATHER_SECRET is a secret: fly secrets set GATHER_SECRET=...
 
 # UDP on fly.io: the app listens on fly-global-services (entrypoint.sh), the external
