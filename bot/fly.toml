@@ -17,6 +17,8 @@ primary_region = "ams"
   GATHER_SERVERS = "eu=soldatreloaded-eu.fly.dev:23073"
   GATHER_PREFIX = "!test_"
   GATHER_TEAM_SIZE = "3"
+  # who may have every server's password DM'd (the passwords command): Discord user IDs
+  GATHER_ADMIN_IDS = "511603215591276584"
   # GATHER_DISCORD_TOKEN and GATHER_SECRET are secrets: fly secrets set ...
 
 [http_service]

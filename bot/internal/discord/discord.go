@@ -111,6 +111,9 @@ func (b *Bot) onMessage(s *discordgo.Session, m *discordgo.MessageCreate) {
 		reply = b.svc.Maps()
 	case "abort", "end", "reset":
 		reply = b.svc.Abort(p, b.isAdmin(m), args)
+	case "passwords", "password":
+		reply = b.svc.Passwords(p)
+		log.Printf("discord: %s (%s) asked for the passwords: %s", p.Name, p.ID, reply)
 	case "help", "":
 		reply = b.svc.Help()
 	default:

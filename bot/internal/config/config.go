@@ -29,6 +29,7 @@ type Config struct {
 	Prefix   string   // GATHER_PREFIX: "!beta_" by default
 	Maps     []string // GATHER_MAPS: the pool, space-separated; the CTF maps by default
 	TeamSize int      // GATHER_TEAM_SIZE: 3 by default
+	Admins   []string // GATHER_ADMIN_IDS: the Discord user IDs that may have every server's password DM'd; none by default
 }
 
 // DefaultMaps is SoldatReloaded's CTF maps (assets/maps/ctf_*.pms).
@@ -52,6 +53,7 @@ func Load() (Config, error) {
 		Secret:   os.Getenv("GATHER_SECRET"),
 		Prefix:   getenv("GATHER_PREFIX", "!beta_"),
 		Maps:     strings.Fields(os.Getenv("GATHER_MAPS")),
+		Admins:   ParseList(os.Getenv("GATHER_ADMIN_IDS")),
 	}
 	var errs []error
 	for name, v := range map[string]string{"GATHER_DISCORD_TOKEN": c.Token, "GATHER_CHANNEL_ID": strings.Join(c.Channels, " "), "GATHER_SECRET": c.Secret} {

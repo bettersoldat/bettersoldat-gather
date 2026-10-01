@@ -36,6 +36,7 @@ func main() {
 		TeamSize: cfg.TeamSize,
 		Pool:     cfg.Maps,
 		Prefix:   cfg.Prefix,
+		Admins:   cfg.Admins,
 	}, nil)
 
 	bot, err := discord.New(cfg.Token, cfg.Channels, cfg.Prefix, svc)

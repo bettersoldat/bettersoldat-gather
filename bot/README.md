@@ -55,6 +55,7 @@ the bot's word); the players put it in the main menu's Join page with the addres
 | `GATHER_CHANNEL_ID` | the channels the bot listens and talks in, separated by spaces or commas; they share one gather, each command is answered where it was said, and the announcements go to all of them | required |
 | `GATHER_SERVERS` | the game servers, `name=host:port`, separated by spaces or commas; the name is what each server's script says (`GATHER_SERVER_NAME`), the host:port what players are told to join | required (or `GATHER_SERVER_ADDR` for one server, named `main`) |
 | `GATHER_SECRET` | shared with every server's script; sent as a bearer token | required |
+| `GATHER_ADMIN_IDS` | Discord user IDs, separated by spaces or commas, that may use `!beta_passwords`: every server's address and password DM'd, a gather on it or not, to get onto a locked server between gathers; anyone else is turned away | none |
 | `GATHER_LISTEN` | where the HTTP API listens | `:8080` |
 | `GATHER_PREFIX` | the command prefix | `!beta_` |
 | `GATHER_MAPS` | the map pool `!map` takes and the tiebreaker is drawn from, space-separated | SoldatReloaded's CTF maps |

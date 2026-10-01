@@ -377,3 +377,29 @@ func TestQueueBoard(t *testing.T) {
 		t.Fatalf("board past full: %q", status)
 	}
 }
+
+// Passwords: only the admins have every server's password DM'd, a gather on it or not;
+// anyone else is turned away and DM'd nothing.
+func TestPasswordsForAdminsOnly(t *testing.T) {
+	n := newNotifier()
+	s := New(Config{Servers: []ServerConfig{{Name: "eu1", Addr: "eu.example:23073"}, {Name: "na1", Addr: "na.example:23073"}},
+		TeamSize: 3, Pool: pool, Prefix: "!test_", Admins: []string{"511603215591276584"}}, n)
+	fill(t, s, 0) // a gather on eu1; na1 free
+	if reply := s.Passwords(player(1)); reply != "that command is not for you." || len(n.dms["1"]) != 1 {
+		t.Fatalf("a stranger: %q, DMs %v", reply, n.dms["1"]) // its one DM is the gather's, not the passwords
+	}
+	admin := gather.Player{ID: "511603215591276584", Name: "boss"}
+	if reply := s.Passwords(admin); reply != "check your DMs." {
+		t.Fatalf("the admin: %q", reply)
+	}
+	dm := n.dms[admin.ID][0]
+	eu, na := state(t, s, "eu1"), state(t, s, "na1")
+	if !strings.Contains(dm, "**eu1** `eu.example:23073` — password `"+eu.Password+"` (gather #1 live)") ||
+		!strings.Contains(dm, "**na1** `na.example:23073` — password `"+na.Password+"` (free)") {
+		t.Fatalf("the passwords DM: %q", dm)
+	}
+	n.failDM[admin.ID] = true
+	if reply := s.Passwords(admin); !strings.Contains(reply, "couldn't DM you") {
+		t.Fatalf("closed DMs: %q", reply)
+	}
+}

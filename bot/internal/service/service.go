@@ -37,6 +37,7 @@ type Config struct {
 	TeamSize int      // 3 for 3v3
 	Pool     []string // the maps !map takes in the game, and the tiebreaker is drawn from
 	Prefix   string   // the command prefix, for the help and the hints
+	Admins   []string // the Discord user IDs that may have every server's password DM'd (Passwords)
 }
 
 // server is one game server and the gather on it.
@@ -58,6 +59,7 @@ type Service struct {
 	queue   []gather.Player
 	nextID  int
 	n       Notifier
+	admins  map[string]bool
 }
 
 // Errors the commands answer with.
@@ -79,7 +81,10 @@ func New(cfg Config, n Notifier) *Service {
 	if len(cfg.Servers) == 0 {
 		panic("service: at least one server is needed")
 	}
-	s := &Service{cfg: cfg, byName: map[string]*server{}, nextID: 1, n: n}
+	s := &Service{cfg: cfg, byName: map[string]*server{}, nextID: 1, n: n, admins: map[string]bool{}}
+	for _, id := range cfg.Admins {
+		s.admins[id] = true
+	}
 	for _, sc := range cfg.Servers {
 		srv := &server{name: sc.Name, addr: sc.Addr, g: gather.New(cfg.TeamSize, cfg.Pool, nil), onServer: map[int]string{},
 			version: 1, changed: make(chan struct{})}
@@ -290,6 +295,34 @@ func (s *Service) Spec(p gather.Player, name string) string {
 		return "no way to DM you."
 	}
 	if err := s.n.DM(p.ID, msg); err != nil {
+		return "I couldn't DM you (are your DMs closed?)."
+	}
+	return "check your DMs."
+}
+
+// Passwords DMs p every server's address and password, a gather on it or not, so it can
+// get onto a locked server between gathers. Only for the users the bot is told may
+// (Config.Admins); anyone else is turned away.
+func (s *Service) Passwords(p gather.Player) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.admins[p.ID] {
+		return "that command is not for you."
+	}
+	if s.n == nil {
+		return "no way to DM you."
+	}
+	var b strings.Builder
+	b.WriteString("**Server passwords**")
+	for _, srv := range s.servers {
+		what := "free"
+		if srv.g.Phase != gather.Idle {
+			what = fmt.Sprintf("gather #%d live", srv.g.ID)
+		}
+		fmt.Fprintf(&b, "\n**%s** `%s` — password `%s` (%s)", srv.name, srv.addr, srv.g.Password, what)
+	}
+	b.WriteString("\nThe passwords change when a gather starts or ends, and when the bot restarts.")
+	if err := s.n.DM(p.ID, b.String()); err != nil {
 		return "I couldn't DM you (are your DMs closed?)."
 	}
 	return "check your DMs."
