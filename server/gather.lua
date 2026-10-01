@@ -296,6 +296,27 @@ function on_leave(slot, name)
     event("leave", slot, name)
 end
 
+local pending = {} -- chat commands said, to run on the next tick
+
+local function run_command(slot, cmd, arg)
+    if cmd == "status" then
+        cmd_status(slot)
+        return
+    end
+    local known = cmd == "map" or cmd == "tb" or cmd == "tiebreaker" or cmd == "r" or cmd == "restart"
+        or cmd == "p" or cmd == "pause" or cmd == "up" or cmd == "unpause"
+    if not known then return end
+    if spectating(slot) then
+        server.say_to(slot, "Spectators don't run the game.", color)
+        return
+    end
+    if cmd == "map" then cmd_map(slot, arg)
+    elseif cmd == "tb" or cmd == "tiebreaker" then cmd_tiebreaker(slot)
+    elseif cmd == "r" or cmd == "restart" then cmd_restart(slot)
+    elseif cmd == "p" or cmd == "pause" then cmd_pause(slot)
+    elseif cmd == "up" or cmd == "unpause" then cmd_unpause(slot) end
+end
+
 function on_chat(slot, text, team)
     local lower = text:lower()
     if in_series() and lower:match("^/votemap") then
@@ -304,21 +325,9 @@ function on_chat(slot, text, team)
     end
     local cmd, arg = lower:match("^!(%a+)%s*(.*)$")
     if not cmd then return end
-    if cmd == "status" then
-        cmd_status(slot)
-        return true
-    end
-    if spectating(slot) then
-        server.say_to(slot, "Spectators don't run the game.", color)
-        return true
-    end
-    if cmd == "map" then cmd_map(slot, arg)
-    elseif cmd == "tb" or cmd == "tiebreaker" then cmd_tiebreaker(slot)
-    elseif cmd == "r" or cmd == "restart" then cmd_restart(slot)
-    elseif cmd == "p" or cmd == "pause" then cmd_pause(slot)
-    elseif cmd == "up" or cmd == "unpause" then cmd_unpause(slot)
-    else return end
-    return true
+    -- The command's line goes to the chat like any other; the command runs on the
+    -- next tick, so its answer follows the line rather than coming before it.
+    pending[#pending + 1] = function() run_command(slot, cmd, arg) end
 end
 
 -- Every second, by the server's own ticks (on_second stands still with the world): a
@@ -339,6 +348,11 @@ local ticks = 0
 -- as the world's clock stands while paused.
 function on_tick(tick)
     ticks = ticks + 1
+    if #pending > 0 then
+        local now = pending
+        pending = {}
+        for _, f in ipairs(now) do f() end
+    end
     if ticks % 60 == 0 then every_second() end
     if not countdown then return end
     countdown = countdown - 1
