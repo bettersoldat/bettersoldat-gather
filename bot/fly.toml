@@ -15,7 +15,7 @@ primary_region = "ams"
   # runs: name=host:port; both space-separated
   GATHER_CHANNEL_ID = "1555196261286809712 1555278127331020933"
   GATHER_SERVERS = "eu=soldatreloaded-eu.fly.dev:23073"
-  GATHER_PREFIX = "!beta_"
+  GATHER_PREFIX = "!test_"
   GATHER_TEAM_SIZE = "3"
   # GATHER_DISCORD_TOKEN and GATHER_SECRET are secrets: fly secrets set ...
 
