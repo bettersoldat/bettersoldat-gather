@@ -5,7 +5,7 @@
 #   docker run -p 23073:23073/udp -e GATHER_BOT_URL=... -e GATHER_SECRET=... soldatreloaded-gather
 #
 # SOLDATRELOADED_VERSION is a release tag (v0.3.0) or "latest".
-ARG SOLDATRELOADED_REPO=bettersoldat/bettersoldat
+ARG SOLDATRELOADED_REPO=soldatreloaded/soldatreloaded
 ARG SOLDATRELOADED_VERSION=latest
 
 FROM ubuntu:24.04 AS fetch

@@ -69,7 +69,7 @@ command line or in its `config.cfg`.
 
 [Dockerfile](Dockerfile) downloads SoldatReloaded's Linux server release
 (`soldatreloaded-<version>-linux-x86_64-server.tar.gz` from
-[the releases](https://github.com/bettersoldat/bettersoldat/releases): the executable,
+[the releases](https://github.com/soldatreloaded/soldatreloaded/releases): the executable,
 `config.cfg` and the assets a server reads) and adds the script. Nothing is compiled.
 Releases up to v0.3.2, from before the game was renamed, are named
 `bettersoldat-<version>-…` with a `bettersoldat-server` inside; the Dockerfile falls back

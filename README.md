@@ -1,6 +1,6 @@
 # gather-bot
 
-A Discord gather bot for [SoldatReloaded](https://github.com/bettersoldat/bettersoldat),
+A Discord gather bot for [SoldatReloaded](https://github.com/soldatreloaded/soldatreloaded),
 in two halves that deploy on their own:
 
 - [bot/](bot/README.md) — the Discord bot, in Go: the queue, the teams, the map picks,
