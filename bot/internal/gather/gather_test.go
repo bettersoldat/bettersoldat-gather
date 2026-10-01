@@ -33,8 +33,8 @@ func TestStartMakesTeamsAndIsLive(t *testing.T) {
 	if len(g.Teams[Alpha]) != 3 || len(g.Teams[Bravo]) != 3 {
 		t.Fatalf("teams %v / %v", g.Teams[Alpha], g.Teams[Bravo])
 	}
-	if g.Password == first || g.Password == "" || g.Password == g.SpecPassword {
-		t.Fatalf("passwords not renewed: %q %q %q", first, g.Password, g.SpecPassword)
+	if g.Password == first || g.Password == "" {
+		t.Fatalf("password not renewed: %q %q", first, g.Password)
 	}
 	inPool := false
 	for _, m := range pool {
@@ -103,13 +103,13 @@ func TestSeriesGoesToTiebreaker(t *testing.T) {
 
 func TestResetLocksServerAgain(t *testing.T) {
 	g := live(t, 6)
-	pw, spec := g.Password, g.SpecPassword
+	pw := g.Password
 	g.Reset()
 	if g.Phase != Idle || g.ID != 1 || len(g.Members()) != 0 || g.Tiebreaker != "" {
 		t.Fatalf("after reset: %+v", g)
 	}
-	if g.Password == pw || g.SpecPassword == spec {
-		t.Fatal("passwords kept across the reset")
+	if g.Password == pw {
+		t.Fatal("password kept across the reset")
 	}
 	if _, err := g.RoundEnd(report(g, 1, "alpha")); err != ErrNotLive {
 		t.Fatalf("report while idle: %v", err)

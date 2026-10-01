@@ -58,7 +58,7 @@ func newService(n Notifier, servers ...ServerConfig) *Service {
 	if len(servers) == 0 {
 		servers = []ServerConfig{{Name: "main", Addr: "game.example:23073"}}
 	}
-	return New(Config{Servers: servers, TeamSize: 3, Pool: pool, Prefix: "!beta_", Grace: 30}, n)
+	return New(Config{Servers: servers, TeamSize: 3, Pool: pool, Prefix: "!beta_"}, n)
 }
 
 func player(i int) gather.Player {
@@ -107,7 +107,7 @@ func TestFillGoesLiveDMsEveryoneAndAnnounces(t *testing.T) {
 			}
 			continue
 		}
-		if len(dm) != 1 || !strings.Contains(dm[0], st.Password) || !strings.Contains(dm[0], "game.example:23073") || !strings.Contains(dm[0], "/pw "+st.Password) || !strings.Contains(dm[0], "!map") || !strings.Contains(dm[0], st.Tiebreaker) {
+		if len(dm) != 1 || !strings.Contains(dm[0], "Password: `"+st.Password+"`") || !strings.Contains(dm[0], "game.example:23073") || !strings.Contains(dm[0], "!map") || !strings.Contains(dm[0], st.Tiebreaker) {
 			t.Fatalf("DM to %s: %v", id, dm)
 		}
 	}
@@ -143,7 +143,7 @@ func TestFillGoesLiveDMsEveryoneAndAnnounces(t *testing.T) {
 	if reply := s.Del(player(0)); !strings.Contains(reply, "you are playing") {
 		t.Fatalf("del while playing: %q", reply)
 	}
-	if reply := s.Spec(player(9), ""); reply != "check your DMs." || !strings.Contains(n.dms["9"][0], st.SpecPassword) {
+	if reply := s.Spec(player(9), ""); reply != "check your DMs." || !strings.Contains(n.dms["9"][0], st.Password) {
 		t.Fatalf("spec: %q %v", reply, n.dms["9"])
 	}
 }
@@ -179,7 +179,7 @@ func TestSeriesEnds(t *testing.T) {
 		t.Fatal(err)
 	}
 	after := state(t, s, "")
-	if after.Phase != "idle" || after.Password == st.Password || after.SpecPassword == st.SpecPassword || after.Tiebreaker != "" {
+	if after.Phase != "idle" || after.Password == st.Password || after.Tiebreaker != "" {
 		t.Fatalf("after the series: %+v", after)
 	}
 	if !strings.Contains(n.last(), "Gather #1 is over") || !strings.Contains(n.last(), "Bravo wins** 2 - 1") {
@@ -269,7 +269,7 @@ func TestTwoServersPlayAtOnce(t *testing.T) {
 	if reply := s.Spec(player(99), ""); !strings.Contains(reply, "which server") {
 		t.Fatalf("spec without a name: %q", reply)
 	}
-	if reply := s.Spec(player(99), "na1"); reply != "check your DMs." || !strings.Contains(n.dms["99"][0], na.SpecPassword) {
+	if reply := s.Spec(player(99), "na1"); reply != "check your DMs." || !strings.Contains(n.dms["99"][0], na.Password) {
 		t.Fatalf("spec na1: %q", reply)
 	}
 	status := s.Status()

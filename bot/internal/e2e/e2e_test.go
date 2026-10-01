@@ -57,7 +57,7 @@ func (f *fakeBot) State(server string) (api.State, error) {
 	if err := f.check(server); err != nil {
 		return api.State{}, err
 	}
-	return api.State{Server: server, GatherID: 1, Phase: "live", Password: "playpw", SpecPassword: "specpw",
+	return api.State{Server: server, GatherID: 1, Phase: "live", Password: "playpw",
 		Tiebreaker: "ctf_Laos", Pool: pool,
 		Teams: map[string][]string{"alpha": {"a"}, "bravo": {"b"}}}, nil
 }
@@ -190,6 +190,11 @@ func TestScriptPlaysTheSeries(t *testing.T) {
 
 	waitFor("gather: script loaded, polling "+srv.URL+" as e2e", 15*time.Second)
 	waitFor("gather: #1 is on; the tiebreaker is ctf_Laos", 15*time.Second)
+
+	// the password is the server's own now: the script set sv_password to the bot's word
+	waitFor("gather: the password is set", 15*time.Second)
+	io.WriteString(stdin, "sv_password\n")
+	waitFor("playpw", 10*time.Second)
 
 	// nothing counts until a map is asked for
 	say("!tb")

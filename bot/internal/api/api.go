@@ -26,14 +26,13 @@ const ServerHeader = "X-Gather-Server"
 
 // State is what a script needs to know, polled every few seconds.
 type State struct {
-	Server       string              `json:"server"` // the server's name, as the bot knows it
-	GatherID     int                 `json:"gather_id"`
-	Phase        string              `json:"phase"` // "idle" or "live"
-	Password     string              `json:"password"`
-	SpecPassword string              `json:"spec_password"`
-	Tiebreaker   string              `json:"tiebreaker"` // the third map, drawn by the bot; "" while idle
-	Pool         []string            `json:"pool"`       // the maps !map takes
-	Teams        map[string][]string `json:"teams"`      // "alpha" and "bravo", by Discord name
+	Server     string              `json:"server"` // the server's name, as the bot knows it
+	GatherID   int                 `json:"gather_id"`
+	Phase      string              `json:"phase"` // "idle" or "live"
+	Password   string              `json:"password"`
+	Tiebreaker string              `json:"tiebreaker"` // the third map, drawn by the bot; "" while idle
+	Pool       []string            `json:"pool"`       // the maps !map takes
+	Teams      map[string][]string `json:"teams"`      // "alpha" and "bravo", by Discord name
 }
 
 // Event is something that happened on a server.

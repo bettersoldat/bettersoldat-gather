@@ -37,7 +37,6 @@ type Config struct {
 	TeamSize int      // 3 for 3v3
 	Pool     []string // the maps !map takes in the game, and the tiebreaker is drawn from
 	Prefix   string   // the command prefix, for the help and the hints
-	Grace    int      // seconds a player has to say /pw before the server kicks; the script's own setting, told to players
 }
 
 // server is one game server and the gather on it.
@@ -74,9 +73,6 @@ func New(cfg Config, n Notifier) *Service {
 	}
 	if cfg.Prefix == "" {
 		cfg.Prefix = "!beta_"
-	}
-	if cfg.Grace <= 0 {
-		cfg.Grace = 30
 	}
 	if len(cfg.Servers) == 0 {
 		panic("service: at least one server is needed")
@@ -271,9 +267,9 @@ func (s *Service) Spec(p gather.Player, name string) string {
 	if srv.g.Phase == gather.Idle {
 		return fmt.Sprintf("nothing is on at %s right now.", srv.name)
 	}
-	msg := fmt.Sprintf("Spectating %s\nServer: `%s`\nSpectator password: `%s`\n"+
-		"Join, say `/pw %s` in the chat within %d seconds, and stay in the spectators (team menu, M). Taking a team gets you kicked.",
-		s.title(srv), srv.addr, srv.g.SpecPassword, srv.g.SpecPassword, s.cfg.Grace)
+	msg := fmt.Sprintf("Spectating %s\nServer: `%s`\nPassword: `%s`\n"+
+		"Put both in the main menu's Join page, connect, and stay in the spectators (team menu, M).",
+		s.title(srv), srv.addr, srv.g.Password)
 	if s.n == nil {
 		return "no way to DM you."
 	}
@@ -381,14 +377,13 @@ func (s *Service) State(name string) (api.State, error) {
 	}
 	g := srv.g
 	st := api.State{
-		Server:       srv.name,
-		GatherID:     g.ID,
-		Phase:        g.Phase.String(),
-		Password:     g.Password,
-		SpecPassword: g.SpecPassword,
-		Tiebreaker:   g.Tiebreaker,
-		Pool:         g.SortedPool(),
-		Teams:        map[string][]string{},
+		Server:     srv.name,
+		GatherID:   g.ID,
+		Phase:      g.Phase.String(),
+		Password:   g.Password,
+		Tiebreaker: g.Tiebreaker,
+		Pool:       g.SortedPool(),
+		Teams:      map[string][]string{},
 	}
 	for t := range g.Teams {
 		names := []string{}
@@ -495,7 +490,7 @@ func (s *Service) started(srv *server) {
 	for t := range g.Teams {
 		fmt.Fprintf(&b, "%s: %s\n", teamTitle(t), gather.Names(g.Teams[t]))
 	}
-	fmt.Fprintf(&b, "Server: `%s` — the password is in your DMs (`%s` sends it again). %s\nWatch with `%s`.", srv.addr, s.cmd("info"), s.inGame(g), spec)
+	fmt.Fprintf(&b, "Server: `%s` — the password is in your DMs (`%s` sends it again); both go in the main menu's Join page. %s\nWatch with `%s`.", srv.addr, s.cmd("info"), s.inGame(g), spec)
 	if len(failed) > 0 {
 		fmt.Fprintf(&b, "\nI couldn't DM %s: open your DMs and use `%s`.", strings.Join(failed, ", "), s.cmd("info"))
 	}
@@ -540,8 +535,7 @@ func (s *Service) playerDM(srv *server, t int) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "**%s is on!** You are on team **%s** with %s.\n", s.title(srv), teamTitle(t), gather.Names(g.Teams[t]))
 	fmt.Fprintf(&b, "Server: `%s`\nPassword: `%s`\n", srv.addr, g.Password)
-	fmt.Fprintf(&b, "Join the server, then say `/pw %s` in the chat (T) within %d seconds, or it kicks you. Then join team %s from the team menu (M).\n",
-		g.Password, s.cfg.Grace, teamTitle(t))
+	fmt.Fprintf(&b, "Put both in the main menu's Join page and connect, then join team %s from the team menu (M).\n", teamTitle(t))
 	b.WriteString(s.inGame(g))
 	return b.String()
 }

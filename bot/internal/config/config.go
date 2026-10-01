@@ -29,7 +29,6 @@ type Config struct {
 	Prefix    string   // GATHER_PREFIX: "!beta_" by default
 	Maps      []string // GATHER_MAPS: the pool, space-separated; the CTF maps by default
 	TeamSize  int      // GATHER_TEAM_SIZE: 3 by default
-	Grace     int      // GATHER_GRACE: seconds to say /pw, 30 by default; must match the script's
 }
 
 // DefaultMaps is bettersoldat's CTF maps (assets/maps/ctf_*.pms).
@@ -69,9 +68,6 @@ func Load() (Config, error) {
 		c.Maps = DefaultMaps
 	}
 	if c.TeamSize, err = intenv("GATHER_TEAM_SIZE", 3); err != nil {
-		errs = append(errs, err)
-	}
-	if c.Grace, err = intenv("GATHER_GRACE", 30); err != nil {
 		errs = append(errs, err)
 	}
 	return c, errors.Join(errs...)

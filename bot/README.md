@@ -24,11 +24,11 @@ ranked or persisted; restarting the bot empties the queue.
    the same at any point (a player of the gather ends their own; anyone with Manage
    Server ends any, by server name).
 
-`!beta_spec [server]` DMs a server's address and its spectators' password. `!beta_info`
-sends a player their DM again. `!beta_help` lists the commands.
+`!beta_spec [server]` DMs a server's address and password, to watch from the
+spectators. `!beta_info` sends a player their DM again. `!beta_help` lists the commands.
 
-The server has no password of its own: the script on it keeps the door, and
-[../server/README.md](../server/README.md) says how.
+The password is the server's own (`sv_password`, which the script on it keeps set to
+the bot's word); the players put it in the main menu's Join page with the address.
 
 ## Setting the bot up in Discord
 
@@ -57,7 +57,6 @@ The server has no password of its own: the script on it keeps the door, and
 | `GATHER_PREFIX` | the command prefix | `!beta_` |
 | `GATHER_MAPS` | the map pool `!map` takes and the tiebreaker is drawn from, space-separated | bettersoldat's CTF maps |
 | `GATHER_TEAM_SIZE` | players a side | `3` |
-| `GATHER_GRACE` | seconds a player has to say `/pw` on the server, told to them; keep it the servers' `GATHER_GRACE` | `30` |
 
 A `.env` in the working directory is read first ([.env.example](.env.example)).
 
@@ -124,7 +123,7 @@ out when the bot has one server):
 
 | call | what |
 |---|---|
-| `GET /api/state` | `{server, gather_id, phase, password, spec_password, tiebreaker, pool, teams}`; `phase` is `idle` or `live`, `tiebreaker` the third map, `pool` what `!map` may load |
+| `GET /api/state` | `{server, gather_id, phase, password, tiebreaker, pool, teams}`; `phase` is `idle` or `live`, `password` what the server must ask, `tiebreaker` the third map, `pool` what `!map` may load |
 | `POST /api/round` | a counted map's end: `{gather_id, map_index, map, why, scores, winner, players, done}` |
 | `POST /api/event` | `{type: "join" or "leave", slot, name}`, for `!beta_status` to say who is on the server |
 | `GET /healthz` | `ok`, no secret |

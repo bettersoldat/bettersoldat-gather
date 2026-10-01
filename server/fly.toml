@@ -22,7 +22,6 @@ primary_region = "ams"
   # this server's name in the bot's GATHER_SERVERS, and where the bot answers
   GATHER_SERVER_NAME = "eu1"
   GATHER_BOT_URL = "https://gather-bot.fly.dev"
-  GATHER_GRACE = "30"
   # GATHER_SECRET is a secret: fly secrets set GATHER_SECRET=...
 
 # UDP on fly.io: the app listens on fly-global-services (entrypoint.sh), the external

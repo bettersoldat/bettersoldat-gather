@@ -6,12 +6,10 @@ each tells the one bot its name.
 
 ## What the script does
 
-- **Keeps the door.** bettersoldat's server has no password of its own, so the script
-  asks: whoever joins must say `/pw <password>` in the chat within `GATHER_GRACE`
-  seconds (30) or is kicked. The players' password, DMed by the bot, lets them into the
-  teams; the spectators' keeps them in the spectators (taking a team gets them kicked).
-  Both change as a gather fills and again as it ends, so the server is locked in
-  between. Bots are left alone.
+- **Keeps the door.** It sets the server's password (`sv_password`, read live) to
+  whatever the bot says: a new one as a gather starts, DMed to the players, and another
+  as it ends, so the server is locked in between. A player joins with it from the main
+  menu's Join page (`cl_password`).
 - **Runs the series.** It polls the bot every few seconds; when the bot says a gather
   is on, the maps are started from the chat, counted when they run to their end,
   `/votemap` is refused, and each counted map's end is posted to the bot. The series
@@ -39,7 +37,6 @@ The script's:
 | `GATHER_BOT_URL` | where the bot answers | `http://127.0.0.1:8080` |
 | `GATHER_SECRET` | the bot's `GATHER_SECRET` | `change-me` |
 | `GATHER_SERVER_NAME` | this server's name in the bot's `GATHER_SERVERS`; may stay empty when the bot has one server | empty |
-| `GATHER_GRACE` | seconds to say `/pw`; keep it the bot's `GATHER_GRACE` | `30` |
 | `GATHER_POLL` | seconds between polls of the bot | `3` |
 
 The server's, read by [entrypoint.sh](entrypoint.sh):
@@ -85,8 +82,10 @@ docker run -p 23073:23073/udp -e GATHER_BOT_URL=https://gather-bot.fly.dev -e GA
 The entrypoint sets the server's `sv_ip` cvar (`feat(server): sv_ip, the address to
 listen on`, after v0.2.0): `+sv_ip <address>` binds that address alone, empty binds
 every one. The build refuses a release from before it, since a server that listens on
-every address goes unanswered on fly.io; v0.2.0 is such a release, so the first that
-works here is the one tagged after that commit.
+every address goes unanswered on fly.io. The script also needs `sv_password`
+(`feat(net): a server password`, which bumps the wire to version 9, so the client has
+to be as new). v0.2.0 has neither, so the first release that works here is the one
+tagged after both commits.
 
 ## On fly.io
 

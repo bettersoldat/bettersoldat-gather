@@ -16,7 +16,6 @@ primary_region = "ams"
   GATHER_SERVERS = "eu1=bettersoldat-eu1.fly.dev:23073"
   GATHER_PREFIX = "!beta_"
   GATHER_TEAM_SIZE = "3"
-  GATHER_GRACE = "30"
   # GATHER_DISCORD_TOKEN and GATHER_SECRET are secrets: fly secrets set ...
 
 [http_service]

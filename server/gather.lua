@@ -3,11 +3,11 @@
 -- +sv_script path/to/gather.lua, and set the values below or their environment
 -- variables. One bot serves several servers: each says its name with every request.
 --
--- It keeps the server to the gather: whoever joins must say /pw <password> in the chat
--- within `grace` seconds, with the password the bot DMed them (or the spectators'
--- one, which keeps them out of the teams), or is kicked. It polls the bot for the
--- gather's state every `poll_every` seconds, blocks map votes while one is on, and
--- posts each counted map's end back to the bot, which shows it in Discord.
+-- It polls the bot for the gather's state every `poll_every` seconds and keeps the
+-- server's password (sv_password) what the bot says it is: the bot makes a new one as a
+-- gather starts, DMs it to the players, and makes another as it ends, so the server is
+-- locked in between. It blocks map votes while a gather is on, and posts each counted
+-- map's end back to the bot, which shows it in Discord.
 --
 -- The maps are picked in the game. While a gather is on, !map <name> starts a map
 -- (a CTF map of the bot's pool); it counts once it runs to its end. !r replays the
@@ -22,24 +22,21 @@
 local bot_url = os.getenv("GATHER_BOT_URL") or "http://127.0.0.1:8080" -- where gatherbot listens
 local secret = os.getenv("GATHER_SECRET") or "change-me"               -- the bot's GATHER_SECRET
 local server_name = os.getenv("GATHER_SERVER_NAME") or ""              -- this server's name in the bot's GATHER_SERVERS; "" with one server
-local grace = tonumber(os.getenv("GATHER_GRACE")) or 30                -- seconds to say /pw; the bot's GATHER_GRACE
 local poll_every = tonumber(os.getenv("GATHER_POLL")) or 3             -- seconds between polls of the bot
 
 local color = "7FD6FF"
 
 -- --- the state ----------------------------------------------------------------------
 
-local state = nil   -- the bot's last word: gather_id, phase, password, spec_password, tiebreaker, pool, teams
+local state = nil   -- the bot's last word: gather_id, phase, password, tiebreaker, pool, teams
 local bot_down = false
 local seconds = 0
+local password_set = nil -- what sv_password was last set to
 
 -- The series being played: how many maps have counted, the maps won, the map asked
 -- for with !map or !tb and not yet started, and whether the round on now counts.
 local series = {id = nil, tiebreaker = nil, played = 0, wins = {alpha = 0, bravo = 0},
                 wanted = nil, counting = false, cut = false, done = true}
-
-local auth = {}      -- slot -> "play" or "spec", once /pw was said right
-local joined_at = {} -- slot -> os.time() of the join
 
 local countdown = nil -- ticks left until the game goes on, while !up counts
 
@@ -87,15 +84,27 @@ local function end_series(why)
     series.wanted = nil
 end
 
+-- The server's password, as the bot says: set through the console, which reads it live.
+local function set_password(pw)
+    pw = pw or ""
+    if pw == password_set then return end
+    if pw:find("[%s\"]") then
+        server.print("gather: the bot's password has a space or a quote in it; not set")
+        return
+    end
+    server.command("sv_password " .. pw)
+    password_set = pw
+    server.print(pw == "" and "gather: the password is off" or "gather: the password is set")
+end
+
 local function apply(st)
-    local was = state
     state = st
+    set_password(st.password)
     if st.phase == "live" then
         if series.id ~= st.gather_id then begin_series(st) end
     elseif series.id then
         end_series("was ended in Discord")
     end
-    if was and was.password ~= st.password then server.print("gather: the password has changed") end
 end
 
 local function poll()
@@ -122,6 +131,11 @@ end
 local function who(slot)
     local p = server.player(slot)
     return p and p.name or "someone"
+end
+
+local function spectating(slot)
+    local p = server.player(slot)
+    return p and p.spectator
 end
 
 -- The map `name` names in the bot's pool: as given, in any case, with or without the
@@ -256,33 +270,16 @@ end
 function on_join(slot, name)
     local p = server.player(slot)
     if p and p.bot then return end
-    joined_at[slot] = os.time()
-    auth[slot] = nil
-    server.say_to(slot, ("This server is for gathers. Say /pw <password> in the chat within %d seconds (the password is in your Discord DMs)."):format(grace), color)
+    if in_series() then
+        server.say_to(slot, ("Gather #%d is on: join your team from the team menu (M), or watch from the spectators. !status for the score."):format(series.id), color)
+    else
+        server.say_to(slot, "Welcome. This server runs gathers from Discord; !map <map> to warm up meanwhile.", color)
+    end
     event("join", slot, name)
 end
 
 function on_leave(slot, name)
-    joined_at[slot] = nil
-    auth[slot] = nil
     event("leave", slot, name)
-end
-
-function on_command(slot, text)
-    local pw = text:match("^pw%s+(%S+)")
-    if not pw then return false end
-    if not state then
-        server.say_to(slot, "The gather bot is not reachable right now; try again in a moment.", color)
-    elseif pw == state.password then
-        auth[slot] = "play"
-        server.say_to(slot, "Welcome to the gather. Join your team from the team menu (M).", color)
-    elseif pw == state.spec_password then
-        auth[slot] = "spec"
-        server.say_to(slot, "Welcome, spectator. Stay in the spectators: taking a team gets you kicked.", color)
-    else
-        server.say_to(slot, "Wrong password.", color)
-    end
-    return true
 end
 
 function on_chat(slot, text, team)
@@ -297,7 +294,7 @@ function on_chat(slot, text, team)
         cmd_status(slot)
         return true
     end
-    if auth[slot] == "spec" then
+    if spectating(slot) then
         server.say_to(slot, "Spectators don't run the game.", color)
         return true
     end
@@ -314,19 +311,6 @@ end
 local function every_second()
     seconds = seconds + 1
     if seconds % poll_every == 0 then poll() end
-    local now = os.time()
-    for _, p in ipairs(server.players()) do
-        if not p.bot then
-            if not auth[p.slot] then
-                if not joined_at[p.slot] then joined_at[p.slot] = now end
-                if now - joined_at[p.slot] >= grace then
-                    server.kick(p.slot, "This server is for gathers: say /pw <password>")
-                end
-            elseif auth[p.slot] == "spec" and (p.team == "alpha" or p.team == "bravo") then
-                server.kick(p.slot, "Spectators only")
-            end
-        end
-    end
 end
 
 local ticks = 0
@@ -373,7 +357,7 @@ function on_round_end(stats)
     })
     local next_step
     if series.done then
-        next_step = "The series is over; the password has changed, see Discord for the next one."
+        next_step = "The series is over; the password changes, see Discord for the next one."
     elseif series.played == 2 then
         next_step = ("1-1: say !tb for the tiebreaker, %s."):format(tostring(series.tiebreaker))
     else

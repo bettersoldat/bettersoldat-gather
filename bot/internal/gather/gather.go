@@ -90,11 +90,10 @@ type Gather struct {
 	TeamSize int
 	Pool     []string // the maps !map takes, and the tiebreaker is drawn from
 
-	Teams        [2][]Player // once started
-	Tiebreaker   string      // drawn as the gather starts; played at 1-1 with !tb
-	Password     string      // the server's password for the players
-	SpecPassword string      // and for spectators
-	Started      time.Time
+	Teams      [2][]Player // once started
+	Tiebreaker string      // drawn as the gather starts; played at 1-1 with !tb
+	Password   string      // the server's password for the players
+	Started    time.Time
 
 	Results []RoundReport
 	Wins    [2]int
@@ -119,7 +118,6 @@ func New(teamSize int, pool []string, rng *mrand.Rand) *Gather {
 	}
 	g := &Gather{TeamSize: teamSize, Pool: append([]string(nil), pool...), rng: rng}
 	g.Password = NewPassword()
-	g.SpecPassword = NewPassword()
 	return g
 }
 
@@ -144,7 +142,6 @@ func (g *Gather) Start(id int, players []Player) error {
 	g.Results = nil
 	g.Wins = [2]int{}
 	g.Password = NewPassword()
-	g.SpecPassword = NewPassword()
 	g.Started = time.Now()
 	g.Phase = Live
 	return nil
@@ -222,7 +219,6 @@ func (g *Gather) Reset() {
 	g.Wins = [2]int{}
 	g.Started = time.Time{}
 	g.Password = NewPassword()
-	g.SpecPassword = NewPassword()
 }
 
 // SortedPool is the pool in alphabetical order, for listing.
