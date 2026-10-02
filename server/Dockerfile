@@ -17,8 +17,8 @@ WORKDIR /fetch
 # "latest" is whatever github.com/.../releases/latest redirects to; the asset is named
 # after the version without its v. The game was called bettersoldat until after v0.3.2,
 # and the releases until then carry that name, on the archive and on the executable, so
-# a release under the new name is tried first and the old name after; either way the
-# executable ends up as soldatreloaded-server.
+# a release under the new name is tried first and the old name after. From v0.6.0 the
+# executable is plain `server`. Whichever, it ends up as soldatreloaded-server.
 RUN set -eu; \
     tag="$SOLDATRELOADED_VERSION"; \
     if [ "$tag" = "latest" ]; then \
@@ -38,6 +38,9 @@ RUN set -eu; \
     mv "${name}" /out; \
     if [ -e /out/bettersoldat-server ] && [ ! -e /out/soldatreloaded-server ]; then \
       mv /out/bettersoldat-server /out/soldatreloaded-server; \
+    fi; \
+    if [ -e /out/server ] && [ ! -e /out/soldatreloaded-server ]; then \
+      mv /out/server /out/soldatreloaded-server; \
     fi; \
     ls -la /out
 # fly.io's UDP needs the server to bind one address (README.md), which sv_ip does; a

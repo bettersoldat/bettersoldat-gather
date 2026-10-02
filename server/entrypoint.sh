@@ -3,6 +3,7 @@
 # listen on the fly-global-services address, not on every one, or its answers leave
 # from another address and never reach the player: when that name resolves, the server
 # binds it (sv_ip). SV_IP set by hand wins; anywhere else it listens on every address.
+# A gather server is private: it never lists itself with the lobby (sv_public 0).
 set -eu
 cd /app
 
@@ -21,4 +22,5 @@ exec ./soldatreloaded-server \
     +sv_timelimit "${SV_TIMELIMIT:-10}" \
     +sv_killlimit "${SV_KILLLIMIT:-10}" \
     +sv_script scripts/server.lua \
+    +sv_public 0 \
     "$@"
