@@ -4,7 +4,7 @@
 #   fly launch --no-deploy --copy-config --name soldatreloaded-eu     (once)
 #   fly ips allocate-v4                                   (once: UDP needs a dedicated IPv4)
 #   fly secrets set GATHER_SECRET=...
-#   fly deploy
+#   fly deploy --ha=false                                 (one machine: two would be two servers)
 app = "soldatreloaded-eu"
 primary_region = "ams"
 
