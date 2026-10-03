@@ -63,14 +63,15 @@ GATHER_BOT_URL=http://127.0.0.1:8080 GATHER_SECRET=change-me ./soldatreloaded-se
 ```
 
 The time and kill limits are the server's and read as it starts, so they go on the
-command line or in its `config.cfg`.
+command line or in its `config/server.cfg`.
 
 ## The image
 
 [Dockerfile](Dockerfile) downloads SoldatReloaded's Linux server release
-(`soldatreloaded-<version>-linux-x86_64-server.tar.gz` from
-[the releases](https://github.com/soldatreloaded/soldatreloaded/releases): the executable,
-`config.cfg` and the assets a server reads) and adds the script. Nothing is compiled.
+(`soldatreloaded-<version>-linux-x86_64-server.zip` from
+[the releases](https://github.com/soldatreloaded/soldatreloaded/releases): the executable
+and the assets a server reads) and adds the script. Nothing is compiled. Releases before
+v0.8.0 are `.tar.gz`, which the Dockerfile falls back to.
 Releases up to v0.3.2, from before the game was renamed, are named
 `bettersoldat-<version>-…` with a `bettersoldat-server` inside; the Dockerfile falls back
 to that name and renames the executable, so an older tag still builds.

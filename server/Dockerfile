@@ -1,6 +1,6 @@
 # A SoldatReloaded gather server: the headless server as SoldatReloaded releases it
-# for Linux (the executable, config.cfg and the assets a server reads), with gather.lua
-# as its script. Nothing is compiled. Build from this directory:
+# for Linux (the executable and the assets a server reads; it makes its config/ as it
+# starts), with gather.lua as its script. Nothing is compiled. Build from this directory:
 #   docker build -t soldatreloaded-gather .
 #   docker run -p 23073:23073/udp -e GATHER_BOT_URL=... -e GATHER_SECRET=... soldatreloaded-gather
 #
@@ -11,30 +11,34 @@ ARG SOLDATRELOADED_VERSION=latest
 FROM ubuntu:24.04 AS fetch
 ARG SOLDATRELOADED_REPO
 ARG SOLDATRELOADED_VERSION
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl unzip \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /fetch
 # "latest" is whatever github.com/.../releases/latest redirects to; the asset is named
 # after the version without its v. The game was called bettersoldat until after v0.3.2,
 # and the releases until then carry that name, on the archive and on the executable, so
 # a release under the new name is tried first and the old name after. From v0.6.0 the
-# executable is plain `server`. Whichever, it ends up as soldatreloaded-server.
+# executable is plain `server`, and from v0.8.0 the archive is a .zip, not a .tar.gz.
+# Whichever, it ends up as soldatreloaded-server.
 RUN set -eu; \
     tag="$SOLDATRELOADED_VERSION"; \
     if [ "$tag" = "latest" ]; then \
       tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/${SOLDATRELOADED_REPO}/releases/latest" | sed 's#.*/tag/##'); \
     fi; \
     version="${tag#v}"; \
+    name=""; \
     for stem in soldatreloaded bettersoldat; do \
-      name="${stem}-${version}-linux-x86_64-server"; \
-      echo "fetching ${name} (${tag})"; \
-      if curl -fsSL -o server.tar.gz "https://github.com/${SOLDATRELOADED_REPO}/releases/download/${tag}/${name}.tar.gz"; then \
-        break; \
-      fi; \
-      name=""; \
+      for ext in zip tar.gz; do \
+        try="${stem}-${version}-linux-x86_64-server"; \
+        echo "fetching ${try}.${ext} (${tag})"; \
+        if curl -fsSL -o "server.${ext}" "https://github.com/${SOLDATRELOADED_REPO}/releases/download/${tag}/${try}.${ext}"; then \
+          name="$try"; \
+          if [ "$ext" = zip ]; then unzip -q server.zip; else tar -xzf server.tar.gz; fi; \
+          break 2; \
+        fi; \
+      done; \
     done; \
     [ -n "$name" ] || { echo "no server archive for ${tag}" >&2; exit 1; }; \
-    tar -xzf server.tar.gz; \
     mv "${name}" /out; \
     if [ -e /out/bettersoldat-server ] && [ ! -e /out/soldatreloaded-server ]; then \
       mv /out/bettersoldat-server /out/soldatreloaded-server; \
