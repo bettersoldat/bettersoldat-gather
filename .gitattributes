@@ -1,0 +1,2 @@
+# shell scripts run in Linux containers; keep them LF even on Windows checkouts
+*.sh text eol=lf
